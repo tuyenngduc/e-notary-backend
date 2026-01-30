@@ -4,5 +4,6 @@ public enum DocType {
     ID_CARD,
     PROPERTY_PAPER,
     DRAFT_CONTRACT,
-    SIGNED_DOCUMENT
+    SIGNED_DOCUMENT,
+    SESSION_VIDEO
 }

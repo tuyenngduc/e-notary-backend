@@ -4,8 +4,6 @@ import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import jakarta.persistence.*;
 import lombok.Data;
-
-import javax.swing.text.Document;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;

@@ -4,7 +4,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: enotary_postgres
-    restart: no
+    restart: "no"
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USERNAME}
