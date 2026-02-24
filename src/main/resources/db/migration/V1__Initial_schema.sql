@@ -2,10 +2,9 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE users (
-    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    full_name VARCHAR(255) NOT NULL,
-    email VARCHAR(255)  NOT NULL,
-    phone_number VARCHAR(20)  NOT NULL,
+    user_id UUID PRIMARY KEY,
+    email VARCHAR(255)  NOT NULL UNIQUE,
+    phone_number VARCHAR(20)  NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL,
     CONSTRAINT chk_user_role CHECK (role IN ('CLIENT', 'NOTARY', 'ADMIN')),
