@@ -1,6 +1,7 @@
 package com.actvn.enotary.security;
 
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.enums.Role;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,6 +20,9 @@ public class CustomUserDetails implements UserDetails {
 
     public UUID getId() {
         return user.getUserId();
+    }
+    public Role getRole() {
+        return user.getRole();
     }
 
     @Override

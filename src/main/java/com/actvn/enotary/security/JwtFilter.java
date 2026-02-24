@@ -1,26 +1,27 @@
 package com.actvn.enotary.security;
 
+import com.actvn.enotary.service.RefreshTokenService;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import org.springframework.security.authentication.*;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.
-        UsernamePasswordAuthenticationFilter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
-    private final CustomUserDetailsService userDetailsService;
+    private final RefreshTokenService refreshTokenService;
 
     public JwtFilter(JwtUtil jwtUtil,
-                     CustomUserDetailsService userDetailsService) {
+                     RefreshTokenService refreshTokenService) {
         this.jwtUtil = jwtUtil;
-        this.userDetailsService = userDetailsService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Override
@@ -35,20 +36,29 @@ public class JwtFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
 
             String token = header.substring(7);
-            String email = jwtUtil.extractEmail(token);
 
-            if (email != null &&
-                    SecurityContextHolder.getContext()
-                            .getAuthentication() == null) {
+            if (jwtUtil.validateToken(token)) {
 
-                var userDetails =
-                        userDetailsService.loadUserByUsername(email);
+                String jti = jwtUtil.extractJti(token);
+                // if token is revoked, don't authenticate
+                if (refreshTokenService.isAccessTokenRevoked(jti)) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                String email = jwtUtil.extractEmail(token);
+                String role = jwtUtil.extractRole(token);
+
+                var authorities = List.of(
+                        new SimpleGrantedAuthority("ROLE_" + role)
+                );
 
                 var authToken =
                         new UsernamePasswordAuthenticationToken(
-                                userDetails,
+                                email,
                                 null,
-                                userDetails.getAuthorities());
+                                authorities
+                        );
 
                 SecurityContextHolder.getContext()
                         .setAuthentication(authToken);
