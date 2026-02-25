@@ -114,4 +114,10 @@ public class UserService {
             throw new AppException("Dữ liệu không hợp lệ hoặc trùng lặp", HttpStatus.CONFLICT);
         }
     }
+
+    public User getById(UUID userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+    }
 }
+
