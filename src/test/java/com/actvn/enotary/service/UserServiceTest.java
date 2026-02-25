@@ -1,10 +1,13 @@
 package com.actvn.enotary.service;
 
 import com.actvn.enotary.dto.request.SignUpRequest;
+import com.actvn.enotary.dto.request.ProfileUpdateRequest;
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.entity.UserProfile;
 import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.VerificationStatus;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.repository.UserProfileRepository;
 import com.actvn.enotary.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,13 +34,16 @@ class UserServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserProfileRepository userProfileRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, passwordEncoder);
+        userService = new UserService(userRepository, userProfileRepository, passwordEncoder);
     }
 
     private SignUpRequest makeRequest(String email, String phone, String password) {
@@ -123,5 +131,69 @@ class UserServiceTest {
         assertEquals("Số điện thoại không hợp lệ", ex.getMessage());
     }
 
-}
+    @Test
+    void updateProfileSuccess() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setUserId(userId);
+        user.setEmail("test@example.com");
+        user.setVerificationStatus(VerificationStatus.PENDING);
 
+        ProfileUpdateRequest req = new ProfileUpdateRequest();
+        req.setIdentityNumber("012345678901");
+        req.setFullName("Nguyen Van A");
+        req.setDateOfBirth(LocalDate.of(1990, 1, 1));
+        req.setGender("Nam");
+        req.setNationality("Vietnamese");
+        req.setPlaceOfOrigin("Hanoi");
+        req.setPlaceOfResidence("Hanoi");
+        req.setIssueDate(LocalDate.of(2010, 1, 1));
+        req.setIssuePlace("Hanoi");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userProfileRepository.findByIdentityNumber("012345678901")).thenReturn(Optional.empty());
+        when(userRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User updated = userService.updateProfile(userId, req);
+
+        assertNotNull(updated.getProfile());
+        UserProfile p = updated.getProfile();
+        assertEquals("012345678901", p.getIdentityNumber());
+        assertEquals("Nguyen Van A", p.getFullName());
+        assertEquals(VerificationStatus.VERIFIED, updated.getVerificationStatus());
+    }
+
+    @Test
+    void updateProfileDuplicateIdentityThrowsConflict() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setUserId(userId);
+        user.setEmail("test@example.com");
+
+        User other = new User();
+        other.setUserId(UUID.randomUUID());
+
+        UserProfile existingProfile = new UserProfile();
+        existingProfile.setUser(other);
+        existingProfile.setIdentityNumber("012345678901");
+
+        ProfileUpdateRequest req = new ProfileUpdateRequest();
+        req.setIdentityNumber("012345678901");
+        req.setFullName("Nguyen Van B");
+        req.setDateOfBirth(LocalDate.of(1990, 1, 1));
+        req.setGender("Nam");
+        req.setNationality("Vietnamese");
+        req.setPlaceOfOrigin("Hanoi");
+        req.setPlaceOfResidence("Hanoi");
+        req.setIssueDate(LocalDate.of(2010, 1, 1));
+        req.setIssuePlace("Hanoi");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userProfileRepository.findByIdentityNumber("012345678901")).thenReturn(Optional.of(existingProfile));
+
+        AppException ex = assertThrows(AppException.class, () -> userService.updateProfile(userId, req));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("Số CCCD đã được sử dụng bởi người dùng khác", ex.getMessage());
+    }
+
+}

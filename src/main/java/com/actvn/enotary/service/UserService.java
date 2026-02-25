@@ -7,6 +7,7 @@ import com.actvn.enotary.entity.UserProfile;
 import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.VerificationStatus;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.repository.UserProfileRepository;
 import com.actvn.enotary.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -15,12 +16,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
@@ -79,8 +82,20 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
 
-        UserProfile profile = new UserProfile();
-        profile.setUser(user);
+        // check duplicate identity number (unique across profiles)
+        if (request.getIdentityNumber() != null && !request.getIdentityNumber().isBlank()) {
+            Optional<UserProfile> existing = userProfileRepository.findByIdentityNumber(request.getIdentityNumber());
+            if (existing.isPresent() && !existing.get().getUser().getUserId().equals(userId)) {
+                throw new AppException("Số CCCD đã được sử dụng bởi người dùng khác", HttpStatus.CONFLICT);
+            }
+        }
+
+        UserProfile profile = user.getProfile();
+        if (profile == null) {
+            profile = new UserProfile();
+            profile.setUser(user);
+        }
+
         profile.setIdentityNumber(request.getIdentityNumber());
         profile.setFullName(request.getFullName());
         profile.setDateOfBirth(request.getDateOfBirth());
@@ -93,6 +108,10 @@ public class UserService {
 
         user.setProfile(profile);
         user.setVerificationStatus(VerificationStatus.VERIFIED);
-        return userRepository.save(user);
+        try {
+            return userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            throw new AppException("Dữ liệu không hợp lệ hoặc trùng lặp", HttpStatus.CONFLICT);
+        }
     }
 }
