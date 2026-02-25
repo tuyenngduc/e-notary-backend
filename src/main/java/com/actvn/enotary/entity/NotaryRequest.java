@@ -2,6 +2,7 @@ package com.actvn.enotary.entity;
 
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
+import com.actvn.enotary.enums.ContractType;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.OffsetDateTime;
@@ -27,7 +28,8 @@ public class NotaryRequest {
     @Enumerated(EnumType.STRING)
     private ServiceType serviceType;
 
-    private String contractType;
+    @Enumerated(EnumType.STRING)
+    private ContractType contractType;
     private String description;
 
     @Enumerated(EnumType.STRING)
