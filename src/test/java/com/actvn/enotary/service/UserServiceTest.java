@@ -196,4 +196,82 @@ class UserServiceTest {
         assertEquals("Số CCCD đã được sử dụng bởi người dùng khác", ex.getMessage());
     }
 
+    // Tests for createNotary
+    @Test
+    void createNotarySuccess() {
+        String emailInput = "Notary@Example.COM";
+        String phoneInput = "+84912345678"; // normalize to 0912345678
+        String password = "notary-pass";
+
+        SignUpRequest req = makeRequest(emailInput, phoneInput, password);
+
+        when(userRepository.existsByEmail("notary@example.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(false);
+        when(passwordEncoder.encode(password)).thenReturn("hashed-notary");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        when(userRepository.save(captor.capture())).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            u.setUserId(UUID.randomUUID());
+            return u;
+        });
+
+        User res = userService.createNotary(req);
+
+        assertNotNull(res.getUserId());
+        assertEquals("notary@example.com", res.getEmail());
+        assertEquals("0912345678", res.getPhoneNumber());
+        assertEquals(Role.NOTARY, res.getRole());
+        assertEquals(VerificationStatus.VERIFIED, res.getVerificationStatus());
+
+        User saved = captor.getValue();
+        assertEquals("notary@example.com", saved.getEmail());
+        assertEquals("0912345678", saved.getPhoneNumber());
+        assertEquals("hashed-notary", saved.getPasswordHash());
+    }
+
+    @Test
+    void createNotaryDuplicateEmailThrowsConflict() {
+        SignUpRequest req = makeRequest("a@b.com", "0912345678", "p");
+        when(userRepository.existsByEmail("a@b.com")).thenReturn(true);
+
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("Email đã tồn tại", ex.getMessage());
+    }
+
+    @Test
+    void createNotaryDuplicatePhoneThrowsConflict() {
+        SignUpRequest req = makeRequest("a@b.com", "+84912345678", "p");
+        when(userRepository.existsByEmail("a@b.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(true);
+
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("Số điện thoại đã tồn tại", ex.getMessage());
+    }
+
+    @Test
+    void createNotarySaveRaceThrowsConflict() {
+        SignUpRequest req = makeRequest("a@b.com", "+84912345678", "p");
+        when(userRepository.existsByEmail("a@b.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("h");
+        when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("Email hoặc số điện thoại đã tồn tại", ex.getMessage());
+    }
+
+    @Test
+    void createNotaryInvalidPhoneThrowsBadRequest() {
+        SignUpRequest req = makeRequest("a@b.com", "12345", "p");
+        // normalization will leave "12345" which is invalid
+
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Số điện thoại không hợp lệ", ex.getMessage());
+    }
+
 }
