@@ -5,11 +5,14 @@ import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
 import com.actvn.enotary.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +61,19 @@ public class NotaryRequestService {
 
     public List<NotaryRequest> listForClient(UUID userId) {
         return notaryRequestRepository.findByClientUserId(userId);
+    }
+
+    // New: paginated listing for notary with filter by status
+    public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, Pageable pageable) {
+        if (status == RequestStatus.NEW) {
+            return notaryRequestRepository.findByStatus(status, pageable);
+        }
+        return notaryRequestRepository.findByNotaryUserIdAndStatus(notaryUserId, status, pageable);
+    }
+
+    // Overload to accept PageRequest specifically (resolves compilation edge cases where compiler expects exact PageRequest type)
+    public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, org.springframework.data.domain.PageRequest pageRequest) {
+        return listForNotaryByStatus(notaryUserId, status, (Pageable) pageRequest);
     }
 
     private Path findProjectRoot() {

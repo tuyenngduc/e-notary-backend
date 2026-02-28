@@ -21,6 +21,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -45,11 +47,17 @@ class NotaryRequestControllerTest {
     private CustomUserDetails clientDetails;
     private UsernamePasswordAuthenticationToken clientAuth;
 
+    private User notaryUser;
+    private CustomUserDetails notaryDetails;
+    private UsernamePasswordAuthenticationToken notaryAuth;
+
     @BeforeEach
     void setUp() {
         notaryRequestService = Mockito.mock(NotaryRequestService.class);
         NotaryRequestController controller = new NotaryRequestController(notaryRequestService);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new com.actvn.enotary.exception.GlobalExceptionHandler())
+                .build();
 
         clientUser = new User();
         clientUser.setUserId(UUID.randomUUID());
@@ -58,6 +66,14 @@ class NotaryRequestControllerTest {
 
         clientDetails = new CustomUserDetails(clientUser);
         clientAuth = new UsernamePasswordAuthenticationToken(clientDetails, null, clientDetails.getAuthorities());
+
+        notaryUser = new User();
+        notaryUser.setUserId(UUID.randomUUID());
+        notaryUser.setEmail("notary@example.com");
+        notaryUser.setRole(com.actvn.enotary.enums.Role.NOTARY);
+
+        notaryDetails = new CustomUserDetails(notaryUser);
+        notaryAuth = new UsernamePasswordAuthenticationToken(notaryDetails, null, notaryDetails.getAuthorities());
     }
 
     @Test
@@ -211,6 +227,63 @@ class NotaryRequestControllerTest {
 
         mockMvc.perform(post("/api/requests/" + rid + "/cancel").principal(clientAuth))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void filterRequests_newStatus_returnsAllNewRequests() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setClient(clientUser);
+        r.setServiceType(ServiceType.OFFLINE);
+        r.setContractType(ContractType.WILL);
+        r.setDescription("desc");
+        r.setStatus(RequestStatus.NEW);
+        r.setCreatedAt(OffsetDateTime.now());
+        r.setUpdatedAt(OffsetDateTime.now());
+
+        var page = new PageImpl<>(List.of(r), PageRequest.of(0, 10), 1);
+
+        when(notaryRequestService.listForNotaryByStatus(eq(notaryUser.getUserId()), eq(RequestStatus.NEW), any(PageRequest.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/requests/filter")
+                        .param("status", "NEW")
+                        .param("page", "0")
+                        .param("size", "10")
+                        .principal(notaryAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.content[0].clientId").value(clientUser.getUserId().toString()));
+    }
+
+    @Test
+    void filterRequests_nonNewStatus_returnsAssignedRequestsOnly() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setClient(clientUser);
+        r.setNotary(notaryUser);
+        r.setServiceType(ServiceType.OFFLINE);
+        r.setContractType(ContractType.WILL);
+        r.setDescription("desc");
+        r.setStatus(RequestStatus.PROCESSING);
+        r.setCreatedAt(OffsetDateTime.now());
+        r.setUpdatedAt(OffsetDateTime.now());
+
+        var page = new PageImpl<>(List.of(r), PageRequest.of(0, 10), 1);
+
+        when(notaryRequestService.listForNotaryByStatus(eq(notaryUser.getUserId()), eq(RequestStatus.PROCESSING), any(PageRequest.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/requests/filter")
+                        .param("status", "PROCESSING")
+                        .param("page", "0")
+                        .param("size", "10")
+                        .principal(notaryAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
     }
 
 }
