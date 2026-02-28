@@ -58,6 +58,35 @@ public class UserService {
         }
     }
 
+    @Transactional
+    public User createNotary(SignUpRequest request) {
+        String email = normalizeEmail(request.getEmail());
+        String phone = normalizePhone(request.getPhoneNumber());
+
+        if (phone == null || !phone.matches("^0\\d{9}$")) {
+            throw new AppException("Số điện thoại không hợp lệ", HttpStatus.BAD_REQUEST);
+        }
+
+        if (userRepository.existsByEmail(email)) {
+            throw new AppException("Email đã tồn tại", HttpStatus.CONFLICT);
+        }
+        if (userRepository.existsByPhoneNumber(phone)) {
+            throw new AppException("Số điện thoại đã tồn tại", HttpStatus.CONFLICT);
+        }
+
+        User user = new User();
+        user.setEmail(email);
+        user.setPhoneNumber(phone);
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setRole(Role.NOTARY);
+        user.setVerificationStatus(VerificationStatus.VERIFIED);
+        try {
+            return userRepository.save(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new AppException("Email hoặc số điện thoại đã tồn tại", HttpStatus.CONFLICT);
+        }
+    }
+
     private String normalizeEmail(String email) {
         if (email == null) return null;
         return email.trim().toLowerCase();

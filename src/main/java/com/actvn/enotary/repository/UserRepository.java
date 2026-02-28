@@ -1,6 +1,7 @@
 package com.actvn.enotary.repository;
 
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.enums.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,4 +13,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
     boolean existsByPhoneNumber(String phoneNumber);
     boolean existsByEmail(String email);
+
+    // count users by role
+    long countByRole(Role role);
 }
