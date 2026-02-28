@@ -6,10 +6,13 @@ import com.actvn.enotary.dto.response.NotaryRequestResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -129,5 +132,32 @@ public class NotaryRequestController {
 
         NotaryRequest updated = notaryRequestService.cancelRequest(id, email);
         return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
+    }
+
+    @GetMapping("/filter")
+    public ResponseEntity<Page<NotaryRequestResponse>> filterRequestsForNotary(
+            Authentication authentication,
+            @RequestParam("status") RequestStatus status,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size
+    ) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+
+        String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
+        boolean isNotary = "NOTARY".equals(role);
+        boolean isAdmin = "ADMIN".equals(role);
+        if (!isNotary && !isAdmin) {
+            return ResponseEntity.status(403).build();
+        }
+
+        UUID notaryUserId = userDetails.getId();
+        PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
+        Page<NotaryRequest> pageResult = notaryRequestService.listForNotaryByStatus(notaryUserId, status, pr);
+        Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
+        return ResponseEntity.ok(resp);
     }
 }
