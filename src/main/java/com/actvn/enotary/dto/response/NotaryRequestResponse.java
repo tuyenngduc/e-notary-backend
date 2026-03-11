@@ -19,6 +19,7 @@ public class NotaryRequestResponse {
     private String contractType;
     private String description;
     private RequestStatus status;
+    private String rejectionReason;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private List<String> documentIds; // just ids for now
@@ -32,6 +33,7 @@ public class NotaryRequestResponse {
                 .contractType(r.getContractType() != null ? r.getContractType().name() : null)
                 .description(r.getDescription())
                 .status(r.getStatus())
+                .rejectionReason(r.getRejectionReason())
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .documentIds(r.getDocuments() != null ? r.getDocuments().stream().map(d -> d.getDocumentId().toString()).toList() : List.of())

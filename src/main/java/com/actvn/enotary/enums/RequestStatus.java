@@ -6,5 +6,6 @@ public enum RequestStatus {
     SCHEDULED,
     AWAITING_PAYMENT,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    REJECTED
 }

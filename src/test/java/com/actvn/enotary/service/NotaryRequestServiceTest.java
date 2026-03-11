@@ -3,6 +3,7 @@ package com.actvn.enotary.service;
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.repository.DocumentRepository;
@@ -102,6 +103,55 @@ class NotaryRequestServiceTest {
 
         AppException ex = assertThrows(AppException.class, () -> service.cancelRequest(rid, "a@b.com"));
         assertEquals(400, ex.getStatus().value());
+    }
+
+    @Test
+    void rejectRequest_assignedNotaryRejects_success() {
+        UUID rid = UUID.randomUUID();
+        UUID nid = UUID.randomUUID();
+
+        User notary = new User();
+        notary.setUserId(nid);
+        notary.setEmail("notary@example.com");
+        notary.setRole(Role.NOTARY);
+
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setNotary(notary);
+        r.setStatus(RequestStatus.PROCESSING);
+
+        when(notaryRequestRepository.findById(rid)).thenReturn(Optional.of(r));
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
+        when(notaryRequestRepository.save(any(NotaryRequest.class))).thenAnswer(i -> i.getArgument(0));
+
+        NotaryRequest out = service.rejectRequest(rid, "notary@example.com", "Thiếu hồ sơ gốc");
+        assertEquals(RequestStatus.REJECTED, out.getStatus());
+        assertEquals("Thiếu hồ sơ gốc", out.getRejectionReason());
+    }
+
+    @Test
+    void rejectRequest_forbiddenForUnassignedNotary() {
+        UUID rid = UUID.randomUUID();
+
+        User assignedNotary = new User();
+        assignedNotary.setUserId(UUID.randomUUID());
+
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setNotary(assignedNotary);
+        r.setStatus(RequestStatus.PROCESSING);
+
+        User anotherNotary = new User();
+        anotherNotary.setUserId(UUID.randomUUID());
+        anotherNotary.setEmail("another-notary@example.com");
+        anotherNotary.setRole(Role.NOTARY);
+
+        when(notaryRequestRepository.findById(rid)).thenReturn(Optional.of(r));
+        when(userRepository.findByEmail("another-notary@example.com")).thenReturn(Optional.of(anotherNotary));
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.rejectRequest(rid, "another-notary@example.com", "Không hợp lệ"));
+        assertEquals(403, ex.getStatus().value());
     }
 }
 

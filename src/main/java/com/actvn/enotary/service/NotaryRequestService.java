@@ -165,4 +165,33 @@ public class NotaryRequestService {
         request.setUpdatedAt(OffsetDateTime.now());
         return notaryRequestRepository.save(request);
     }
+
+    @Transactional
+    public NotaryRequest rejectRequest(UUID requestId, String reviewerEmail, String reason) {
+        NotaryRequest request = getById(requestId);
+
+        User reviewer = userRepository.findByEmail(reviewerEmail)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+
+        boolean isAdmin = reviewer.getRole() != null && reviewer.getRole().name().equals("ADMIN");
+        boolean isAssignedNotary = reviewer.getRole() != null
+                && reviewer.getRole().name().equals("NOTARY")
+                && request.getNotary() != null
+                && request.getNotary().getUserId().equals(reviewer.getUserId());
+
+        if (!isAdmin && !isAssignedNotary) {
+            throw new AppException("Không có quyền từ chối yêu cầu này", HttpStatus.FORBIDDEN);
+        }
+
+        if (request.getStatus() == RequestStatus.COMPLETED
+                || request.getStatus() == RequestStatus.CANCELLED
+                || request.getStatus() == RequestStatus.REJECTED) {
+            throw new AppException("Không thể từ chối yêu cầu ở trạng thái hiện tại", HttpStatus.BAD_REQUEST);
+        }
+
+        request.setStatus(RequestStatus.REJECTED);
+        request.setRejectionReason(reason == null ? null : reason.trim());
+        request.setUpdatedAt(OffsetDateTime.now());
+        return notaryRequestRepository.save(request);
+    }
 }

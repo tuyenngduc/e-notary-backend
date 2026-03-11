@@ -1,6 +1,7 @@
 package com.actvn.enotary.controller;
 
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
+import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
@@ -227,6 +228,44 @@ class NotaryRequestControllerTest {
 
         mockMvc.perform(post("/api/requests/" + rid + "/cancel").principal(clientAuth))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectRequest_notaryCanReject() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest updated = new NotaryRequest();
+        updated.setRequestId(rid);
+        updated.setClient(clientUser);
+        updated.setNotary(notaryUser);
+        updated.setStatus(RequestStatus.REJECTED);
+        updated.setRejectionReason("Thiếu giấy tờ bản gốc");
+
+        RejectNotaryRequestRequest req = new RejectNotaryRequestRequest();
+        req.setReason("Thiếu giấy tờ bản gốc");
+
+        when(notaryRequestService.rejectRequest(eq(rid), eq(notaryUser.getEmail()), eq(req.getReason())))
+                .thenReturn(updated);
+
+        mockMvc.perform(post("/api/requests/" + rid + "/reject")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason").value("Thiếu giấy tờ bản gốc"));
+    }
+
+    @Test
+    void rejectRequest_clientForbidden() throws Exception {
+        UUID rid = UUID.randomUUID();
+        RejectNotaryRequestRequest req = new RejectNotaryRequestRequest();
+        req.setReason("Không đủ điều kiện");
+
+        mockMvc.perform(post("/api/requests/" + rid + "/reject")
+                        .principal(clientAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
     }
 
     @Test
