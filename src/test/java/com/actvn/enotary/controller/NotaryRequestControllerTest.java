@@ -2,9 +2,12 @@ package com.actvn.enotary.controller;
 
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
+import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
+import com.actvn.enotary.dto.response.AppointmentResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.enums.AppointmentStatus;
 import com.actvn.enotary.enums.ContractType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
@@ -12,6 +15,7 @@ import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,7 +46,8 @@ class NotaryRequestControllerTest {
 
     private MockMvc mockMvc;
     private NotaryRequestService notaryRequestService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule());
 
     private User clientUser;
     private CustomUserDetails clientDetails;
@@ -323,6 +328,123 @@ class NotaryRequestControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
                 .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+    }
+
+    @Test
+    void scheduleAppointment_notaryCanScheduleOffline() throws Exception {
+        UUID rid = UUID.randomUUID();
+        UUID aid = UUID.randomUUID();
+        OffsetDateTime scheduledTime = OffsetDateTime.now().plusDays(3);
+
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(scheduledTime);
+        req.setPhysicalAddress("Văn phòng công chứng số 2");
+
+        AppointmentResponse response = AppointmentResponse.builder()
+                .appointmentId(aid)
+                .requestId(rid)
+                .serviceType(ServiceType.OFFLINE)
+                .scheduledTime(scheduledTime)
+                .physicalAddress("Văn phòng công chứng số 2")
+                .meetingUrl(null)
+                .status(AppointmentStatus.PENDING)
+                .createdAt(OffsetDateTime.now())
+                .build();
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(header().exists("Location"))
+                .andExpect(jsonPath("$.appointmentId").value(aid.toString()))
+                .andExpect(jsonPath("$.serviceType").value("OFFLINE"))
+                .andExpect(jsonPath("$.physicalAddress").value("Văn phòng công chứng số 2"))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void scheduleAppointment_notaryCanScheduleOnline() throws Exception {
+        UUID rid = UUID.randomUUID();
+        UUID aid = UUID.randomUUID();
+        OffsetDateTime scheduledTime = OffsetDateTime.now().plusDays(2);
+
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(scheduledTime);
+
+        AppointmentResponse response = AppointmentResponse.builder()
+                .appointmentId(aid)
+                .requestId(rid)
+                .serviceType(ServiceType.ONLINE)
+                .scheduledTime(scheduledTime)
+                .physicalAddress(null)
+                .meetingUrl(null)
+                .status(AppointmentStatus.PENDING)
+                .createdAt(OffsetDateTime.now())
+                .build();
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.serviceType").value("ONLINE"))
+                .andExpect(jsonPath("$.meetingUrl").isEmpty());
+    }
+
+    @Test
+    void scheduleAppointment_clientForbidden() throws Exception {
+        UUID rid = UUID.randomUUID();
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(OffsetDateTime.now().plusDays(1));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(clientAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void scheduleAppointment_wrongStatus_returns400() throws Exception {
+        UUID rid = UUID.randomUUID();
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(OffsetDateTime.now().plusDays(1));
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenThrow(new com.actvn.enotary.exception.AppException(
+                        "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái PROCESSING",
+                        org.springframework.http.HttpStatus.BAD_REQUEST));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void scheduleAppointment_duplicateAppointment_returns409() throws Exception {
+        UUID rid = UUID.randomUUID();
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(OffsetDateTime.now().plusDays(1));
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenThrow(new com.actvn.enotary.exception.AppException(
+                        "Yêu cầu này đã có lịch hẹn",
+                        org.springframework.http.HttpStatus.CONFLICT));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict());
     }
 
 }

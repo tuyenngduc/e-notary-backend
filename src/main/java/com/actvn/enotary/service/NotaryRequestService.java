@@ -1,12 +1,18 @@
 package com.actvn.enotary.service;
 
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
+import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
+import com.actvn.enotary.dto.response.AppointmentResponse;
+import com.actvn.enotary.entity.Appointment;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.enums.AppointmentStatus;
 import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.RequestStatus;
+import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
 import com.actvn.enotary.repository.UserRepository;
@@ -34,6 +40,7 @@ public class NotaryRequestService {
     private final NotaryRequestRepository notaryRequestRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
+    private final AppointmentRepository appointmentRepository;
 
     @Transactional
     public NotaryRequest createRequest(String clientEmail, NotaryRequestCreateRequest req) {
@@ -164,6 +171,60 @@ public class NotaryRequestService {
         request.setStatus(com.actvn.enotary.enums.RequestStatus.CANCELLED);
         request.setUpdatedAt(OffsetDateTime.now());
         return notaryRequestRepository.save(request);
+    }
+
+    @Transactional
+    public AppointmentResponse scheduleAppointment(UUID requestId, String notaryEmail, ScheduleAppointmentRequest req) {
+        NotaryRequest request = getById(requestId);
+
+        User reviewer = userRepository.findByEmail(notaryEmail)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+
+        boolean isAdmin = reviewer.getRole() != null && reviewer.getRole().name().equals("ADMIN");
+        boolean isAssignedNotary = reviewer.getRole() != null
+                && reviewer.getRole().name().equals("NOTARY")
+                && request.getNotary() != null
+                && request.getNotary().getUserId().equals(reviewer.getUserId());
+
+        if (!isAdmin && !isAssignedNotary) {
+            throw new AppException("Không có quyền lên lịch cho yêu cầu này", HttpStatus.FORBIDDEN);
+        }
+
+        if (request.getStatus() != RequestStatus.PROCESSING) {
+            throw new AppException(
+                    "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái PROCESSING (hiện tại: " + request.getStatus() + ")",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        if (appointmentRepository.existsByRequestRequestId(requestId)) {
+            throw new AppException("Yêu cầu này đã có lịch hẹn", HttpStatus.CONFLICT);
+        }
+
+        Appointment appointment = new Appointment();
+        appointment.setRequest(request);
+        appointment.setScheduledTime(req.getScheduledTime());
+        appointment.setStatus(AppointmentStatus.PENDING);
+        appointment.setCreatedAt(OffsetDateTime.now());
+
+        if (request.getServiceType() == ServiceType.OFFLINE) {
+            String address = (req.getPhysicalAddress() != null && !req.getPhysicalAddress().isBlank())
+                    ? req.getPhysicalAddress()
+                    : "Văn phòng công chứng số 1";
+            appointment.setPhysicalAddress(address);
+            appointment.setMeetingUrl(null);
+        } else {
+            // ONLINE: phòng họp Video Call sẽ được tạo sau
+            appointment.setMeetingUrl(null);
+            appointment.setPhysicalAddress(null);
+        }
+
+        Appointment saved = appointmentRepository.save(appointment);
+
+        request.setStatus(RequestStatus.SCHEDULED);
+        request.setUpdatedAt(OffsetDateTime.now());
+        notaryRequestRepository.save(request);
+
+        return AppointmentResponse.fromEntity(saved);
     }
 
     @Transactional

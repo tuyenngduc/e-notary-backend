@@ -4,7 +4,6 @@ import com.actvn.enotary.enums.AppointmentStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -20,7 +19,7 @@ public class Appointment {
     @JoinColumn(name = "request_id", nullable = false)
     private NotaryRequest request;
 
-    private LocalDateTime scheduledTime;
+    private OffsetDateTime scheduledTime;
     private String meetingUrl; //Custom WebRTC
     private String physicalAddress = "Văn phòng công chứng số 1";
 
