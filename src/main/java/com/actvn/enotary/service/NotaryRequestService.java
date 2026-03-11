@@ -7,15 +7,19 @@ import com.actvn.enotary.entity.Appointment;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
+import com.actvn.enotary.entity.VideoSession;
 import com.actvn.enotary.enums.AppointmentStatus;
 import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
+import com.actvn.enotary.enums.VideoSessionStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
 import com.actvn.enotary.repository.UserRepository;
+import com.actvn.enotary.repository.VideoSessionRepository;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -41,6 +45,10 @@ public class NotaryRequestService {
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final AppointmentRepository appointmentRepository;
+    private final VideoSessionRepository videoSessionRepository;
+
+    @Value("${app.meeting.base-url:http://localhost:8080}")
+    private String baseUrl;
 
     @Transactional
     public NotaryRequest createRequest(String clientEmail, NotaryRequestCreateRequest req) {
@@ -213,12 +221,36 @@ public class NotaryRequestService {
             appointment.setPhysicalAddress(address);
             appointment.setMeetingUrl(null);
         } else {
-            // ONLINE: phòng họp Video Call sẽ được tạo sau
-            appointment.setMeetingUrl(null);
+            // ONLINE: Tạo video session tự động
             appointment.setPhysicalAddress(null);
+            // meetingUrl sẽ được set sau khi tạo video session
         }
 
         Appointment saved = appointmentRepository.save(appointment);
+
+        // Nếu là ONLINE, tạo video session ngay lập tức
+        if (request.getServiceType() == ServiceType.ONLINE) {
+            VideoSession session = new VideoSession();
+            session.setAppointment(saved);
+            
+            String roomId = "room_" + UUID.randomUUID().toString().substring(0, 8);
+            String sessionToken = UUID.randomUUID().toString();
+            
+            session.setRoomId(roomId);
+            session.setSessionToken(sessionToken);
+            
+            String meetingUrl = baseUrl + "/api/video/room/" + roomId + "?token=" + sessionToken;
+            session.setMeetingUrl(meetingUrl);
+            session.setStatus(VideoSessionStatus.PENDING);
+            session.setCreatedAt(OffsetDateTime.now());
+            session.setUpdatedAt(OffsetDateTime.now());
+            
+            videoSessionRepository.save(session);
+            
+            // Cập nhật meeting URL trong appointment
+            saved.setMeetingUrl(meetingUrl);
+            appointmentRepository.save(saved);
+        }
 
         request.setStatus(RequestStatus.SCHEDULED);
         request.setUpdatedAt(OffsetDateTime.now());
