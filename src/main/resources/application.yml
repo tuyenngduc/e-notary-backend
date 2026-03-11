@@ -32,7 +32,10 @@ jwt:
 logging:
   level:
     org.springframework.security: DEBUG
+    
 app:
   admin:
     email: ${ADMIN_EMAIL:admin@localhost}
     password: ${ADMIN_PASSWORD:DefaultAdmin@123}
+  meeting:
+    base-url: ${MEETING_BASE_URL:http://localhost:8080}
