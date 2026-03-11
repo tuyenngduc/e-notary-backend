@@ -35,6 +35,9 @@ public class NotaryRequest {
     @Enumerated(EnumType.STRING)
     private RequestStatus status = RequestStatus.NEW;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @Column(updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 

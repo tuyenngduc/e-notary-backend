@@ -1,6 +1,7 @@
 package com.actvn.enotary.controller;
 
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
+import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
 import com.actvn.enotary.dto.response.DocumentResponse;
 import com.actvn.enotary.dto.response.NotaryRequestResponse;
 import com.actvn.enotary.entity.Document;
@@ -131,6 +132,27 @@ public class NotaryRequestController {
         String email = userDetails.getUsername();
 
         NotaryRequest updated = notaryRequestService.cancelRequest(id, email);
+        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<NotaryRequestResponse> rejectRequest(
+            Authentication authentication,
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody RejectNotaryRequestRequest request) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
+        boolean isNotary = "NOTARY".equals(role);
+        boolean isAdmin = "ADMIN".equals(role);
+        if (!isNotary && !isAdmin) {
+            return ResponseEntity.status(403).build();
+        }
+
+        NotaryRequest updated = notaryRequestService.rejectRequest(id, userDetails.getUsername(), request.getReason());
         return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
     }
 
