@@ -1,9 +1,5 @@
 # Hướng Dẫn Sử Dụng Video Session Microservice
 
-## Tổng Quan
-
-Đã hoàn thành xây dựng một **microservice Video Session đơn giản 1-1** để quản lý online video call giữa Notary và Client trong hệ thống công chứng điện tử.
-
 ## Các Tính Năng Chính
 
 ✅ **Tạo Video Session Tự Động**: Khi Notary schedule ONLINE appointment, hệ thống tự động tạo video session  
@@ -12,25 +8,8 @@
 ✅ **Duration Calculation**: Tính thời lượng cuộc gọi tự động  
 ✅ **Security**: Kiểm soát quyền truy cập (chỉ notary và client được phép)  
 
-## Thành Phần Được Tạo
 
-### 1. **Entity**
-- `VideoSession.java` - Lưu trữ thông tin video session
-
-### 2. **Enum**
-- `VideoSessionStatus.java` - Các trạng thái: PENDING, NOTARY_JOINED, IN_PROGRESS, FINISHED, CANCELLED
-
-### 3. **Repository**
-- `VideoSessionRepository.java` - JPA repository với queries tùy chỉnh
-
-### 4. **Service**
-- `VideoSessionService.java` - Business logic:
-  - Tạo video session mới
-  - Verify session token
-  - Join room, end session, cancel session
-  - Tính toán thời lượng cuộc gọi
-
-### 5. **Controller**
+## Controller
 - `VideoSessionController.java` - REST API endpoints:
   - POST `/api/video/sessions` - Tạo video session
   - GET `/api/video/sessions/{id}` - Lấy thông tin session
@@ -41,16 +20,6 @@
   - POST `/api/video/sessions/{id}/cancel` - Hủy video session
   - GET `/api/video/room/{roomId}` - Simple test page
 
-### 6. **DTO**
-- `CreateVideoSessionRequest.java` - Request tạo session
-- `JoinVideoSessionRequest.java` - Request join room  
-- `VideoSessionResponse.java` - Response với đầy đủ thông tin session
-
-### 7. **Database Migration**
-- `V4__video_sessions.sql` - Tạo table `video_sessions` với indexes
-
-### 8. **Configuration**
-- `application.yml` - Thêm config `app.meeting.base-url`
 
 ## Quy Trình Làm Việc
 

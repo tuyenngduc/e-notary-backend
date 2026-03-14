@@ -168,7 +168,6 @@ public class NotaryRequestController {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             return ResponseEntity.status(401).build();
         }
-
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
         boolean isNotary = "NOTARY".equals(role);
