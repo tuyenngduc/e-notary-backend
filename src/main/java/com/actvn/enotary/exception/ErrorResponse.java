@@ -8,6 +8,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class ErrorResponse {
     private int status;
+    private String errorCode;
     private String message;
     private Map<String, String> errors;
 }

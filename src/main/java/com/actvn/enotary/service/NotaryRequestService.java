@@ -12,6 +12,7 @@ import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -37,10 +38,19 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class NotaryRequestService {
+    private static final String REQUEST_ALREADY_CLAIMED_MESSAGE = "Yêu cầu đã được công chứng viên khác tiếp nhận";
+
     private final NotaryRequestRepository notaryRequestRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final AppointmentRepository appointmentRepository;
+
+    private boolean isClaimedByAnotherNotary(NotaryRequest request, User reviewer) {
+        boolean isNotary = reviewer.getRole() != null && reviewer.getRole().name().equals("NOTARY");
+        return isNotary
+                && request.getNotary() != null
+                && !request.getNotary().getUserId().equals(reviewer.getUserId());
+    }
 
     @Transactional
     public NotaryRequest createRequest(String clientEmail, NotaryRequestCreateRequest req) {
@@ -174,6 +184,42 @@ public class NotaryRequestService {
     }
 
     @Transactional
+    public NotaryRequest acceptRequest(UUID requestId, String notaryEmail) {
+        User notary = userRepository.findByEmail(notaryEmail)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+
+        boolean isNotary = notary.getRole() != null && notary.getRole().name().equals("NOTARY");
+        if (!isNotary) {
+            throw new AppException("Chỉ công chứng viên mới có thể tiếp nhận yêu cầu", HttpStatus.FORBIDDEN);
+        }
+
+        // Lock row so only one notary can claim NEW request at a time.
+        NotaryRequest request = notaryRequestRepository.findByIdForUpdate(requestId)
+                .orElseThrow(() -> new AppException("Không tìm thấy yêu cầu công chứng", HttpStatus.NOT_FOUND));
+
+        if (isClaimedByAnotherNotary(request, notary)) {
+            throw new AppException(REQUEST_ALREADY_CLAIMED_MESSAGE, HttpStatus.CONFLICT, ErrorCode.REQUEST_ALREADY_CLAIMED);
+        }
+
+        // Idempotent accept for same notary if request was already claimed.
+        if (request.getStatus() == RequestStatus.PROCESSING
+                && request.getNotary() != null
+                && request.getNotary().getUserId().equals(notary.getUserId())) {
+            return request;
+        }
+
+        if (request.getStatus() != RequestStatus.NEW) {
+            throw new AppException("Chỉ có thể tiếp nhận yêu cầu ở trạng thái NEW", HttpStatus.BAD_REQUEST);
+        }
+
+
+        request.setNotary(notary);
+        request.setStatus(RequestStatus.PROCESSING);
+        request.setUpdatedAt(OffsetDateTime.now());
+        return notaryRequestRepository.save(request);
+    }
+
+    @Transactional
     public AppointmentResponse scheduleAppointment(UUID requestId, String notaryEmail, ScheduleAppointmentRequest req) {
         NotaryRequest request = getById(requestId);
 
@@ -185,6 +231,10 @@ public class NotaryRequestService {
                 && reviewer.getRole().name().equals("NOTARY")
                 && request.getNotary() != null
                 && request.getNotary().getUserId().equals(reviewer.getUserId());
+
+        if (isClaimedByAnotherNotary(request, reviewer)) {
+            throw new AppException(REQUEST_ALREADY_CLAIMED_MESSAGE, HttpStatus.CONFLICT, ErrorCode.REQUEST_ALREADY_CLAIMED);
+        }
 
         if (!isAdmin && !isAssignedNotary) {
             throw new AppException("Không có quyền lên lịch cho yêu cầu này", HttpStatus.FORBIDDEN);
@@ -239,6 +289,10 @@ public class NotaryRequestService {
                 && reviewer.getRole().name().equals("NOTARY")
                 && request.getNotary() != null
                 && request.getNotary().getUserId().equals(reviewer.getUserId());
+
+        if (isClaimedByAnotherNotary(request, reviewer)) {
+            throw new AppException(REQUEST_ALREADY_CLAIMED_MESSAGE, HttpStatus.CONFLICT, ErrorCode.REQUEST_ALREADY_CLAIMED);
+        }
 
         if (!isAdmin && !isAssignedNotary) {
             throw new AppException("Không có quyền từ chối yêu cầu này", HttpStatus.FORBIDDEN);
