@@ -26,6 +26,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse errorResponse = new ErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
+                ErrorCode.VALIDATION_ERROR.name(),
                 "Dữ liệu đầu vào không hợp lệ",
                 errors
         );
@@ -35,8 +36,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<ErrorResponse> handleAppException(AppException ex) {
+        String errorCode = ex.getErrorCode() != null
+                ? ex.getErrorCode().name()
+                : ErrorCode.fromHttpStatus(ex.getStatus()).name();
+
         ErrorResponse errorResponse = new ErrorResponse(
                 ex.getStatus().value(),
+                errorCode,
                 ex.getMessage(),
                 null
         );
@@ -47,6 +53,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAuthenticationException(AuthenticationException ex) {
         ErrorResponse errorResponse = new ErrorResponse(
                 HttpStatus.UNAUTHORIZED.value(),
+                ErrorCode.AUTHENTICATION_FAILED.name(),
                 "Authentication failed.",
                 null
         );

@@ -9,6 +9,7 @@ import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -159,7 +160,100 @@ class NotaryRequestServiceTest {
 
         AppException ex = assertThrows(AppException.class,
                 () -> service.rejectRequest(rid, "another-notary@example.com", "Không hợp lệ"));
+        assertEquals(409, ex.getStatus().value());
+        assertEquals("Yêu cầu đã được công chứng viên khác tiếp nhận", ex.getMessage());
+        assertEquals(ErrorCode.REQUEST_ALREADY_CLAIMED, ex.getErrorCode());
+    }
+
+    @Test
+    void acceptRequest_notaryAcceptsNewRequest_success() {
+        UUID rid = UUID.randomUUID();
+        UUID nid = UUID.randomUUID();
+
+        User notary = new User();
+        notary.setUserId(nid);
+        notary.setEmail("notary@example.com");
+        notary.setRole(Role.NOTARY);
+
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setStatus(RequestStatus.NEW);
+
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(r));
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
+        when(notaryRequestRepository.save(any(NotaryRequest.class))).thenAnswer(i -> i.getArgument(0));
+
+        NotaryRequest out = service.acceptRequest(rid, "notary@example.com");
+
+        assertEquals(RequestStatus.PROCESSING, out.getStatus());
+        assertNotNull(out.getNotary());
+        assertEquals(nid, out.getNotary().getUserId());
+    }
+
+    @Test
+    void acceptRequest_wrongStatus_returns400() {
+        UUID rid = UUID.randomUUID();
+
+        User notary = new User();
+        notary.setUserId(UUID.randomUUID());
+        notary.setEmail("notary@example.com");
+        notary.setRole(Role.NOTARY);
+
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setStatus(RequestStatus.PROCESSING);
+
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(r));
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.acceptRequest(rid, "notary@example.com"));
+        assertEquals(400, ex.getStatus().value());
+    }
+
+    @Test
+    void acceptRequest_clientRoleForbidden() {
+        UUID rid = UUID.randomUUID();
+
+        User client = new User();
+        client.setUserId(UUID.randomUUID());
+        client.setEmail("client@example.com");
+        client.setRole(Role.CLIENT);
+
+
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(client));
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.acceptRequest(rid, "client@example.com"));
         assertEquals(403, ex.getStatus().value());
+    }
+
+    @Test
+    void acceptRequest_alreadyClaimedByAnotherNotary_returns409() {
+        UUID rid = UUID.randomUUID();
+
+        User currentNotary = new User();
+        currentNotary.setUserId(UUID.randomUUID());
+        currentNotary.setEmail("current-notary@example.com");
+        currentNotary.setRole(Role.NOTARY);
+
+        User anotherNotary = new User();
+        anotherNotary.setUserId(UUID.randomUUID());
+        anotherNotary.setEmail("another-notary@example.com");
+        anotherNotary.setRole(Role.NOTARY);
+
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setStatus(RequestStatus.PROCESSING);
+        r.setNotary(currentNotary);
+
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(r));
+        when(userRepository.findByEmail("another-notary@example.com")).thenReturn(Optional.of(anotherNotary));
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.acceptRequest(rid, "another-notary@example.com"));
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(ErrorCode.REQUEST_ALREADY_CLAIMED, ex.getErrorCode());
     }
 
     @Test
@@ -315,7 +409,9 @@ class NotaryRequestServiceTest {
 
         AppException ex = assertThrows(AppException.class,
                 () -> service.scheduleAppointment(rid, "other@example.com", req));
-        assertEquals(403, ex.getStatus().value());
+        assertEquals(409, ex.getStatus().value());
+        assertEquals("Yêu cầu đã được công chứng viên khác tiếp nhận", ex.getMessage());
+        assertEquals(ErrorCode.REQUEST_ALREADY_CLAIMED, ex.getErrorCode());
     }
 }
 

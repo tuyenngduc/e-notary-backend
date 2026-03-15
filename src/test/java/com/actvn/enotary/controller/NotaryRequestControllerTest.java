@@ -12,6 +12,7 @@ import com.actvn.enotary.enums.ContractType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -274,6 +275,54 @@ class NotaryRequestControllerTest {
     }
 
     @Test
+    void rejectRequest_alreadyClaimedByAnotherNotary_returns409() throws Exception {
+        UUID rid = UUID.randomUUID();
+        RejectNotaryRequestRequest req = new RejectNotaryRequestRequest();
+        req.setReason("Không hợp lệ");
+
+        when(notaryRequestService.rejectRequest(eq(rid), eq(notaryUser.getEmail()), eq(req.getReason())))
+                .thenThrow(new com.actvn.enotary.exception.AppException(
+                        "Yêu cầu đã được công chứng viên khác tiếp nhận",
+                        org.springframework.http.HttpStatus.CONFLICT,
+                        ErrorCode.REQUEST_ALREADY_CLAIMED));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/reject")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("REQUEST_ALREADY_CLAIMED"));
+    }
+
+    @Test
+    void acceptRequest_notaryCanAccept() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest updated = new NotaryRequest();
+        updated.setRequestId(rid);
+        updated.setClient(clientUser);
+        updated.setNotary(notaryUser);
+        updated.setStatus(RequestStatus.PROCESSING);
+
+        when(notaryRequestService.acceptRequest(eq(rid), eq(notaryUser.getEmail())))
+                .thenReturn(updated);
+
+        mockMvc.perform(post("/api/requests/" + rid + "/accept")
+                        .principal(notaryAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.notaryId").value(notaryUser.getUserId().toString()));
+    }
+
+    @Test
+    void acceptRequest_clientForbidden() throws Exception {
+        UUID rid = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/requests/" + rid + "/accept")
+                        .principal(clientAuth))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void filterRequests_newStatus_returnsAllNewRequests() throws Exception {
         UUID rid = UUID.randomUUID();
         NotaryRequest r = new NotaryRequest();
@@ -444,7 +493,28 @@ class NotaryRequestControllerTest {
                         .principal(notaryAuth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("CONFLICT"));
+    }
+
+    @Test
+    void scheduleAppointment_alreadyClaimedByAnotherNotary_returns409() throws Exception {
+        UUID rid = UUID.randomUUID();
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(OffsetDateTime.now().plusDays(1));
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenThrow(new com.actvn.enotary.exception.AppException(
+                        "Yêu cầu đã được công chứng viên khác tiếp nhận",
+                        org.springframework.http.HttpStatus.CONFLICT,
+                        ErrorCode.REQUEST_ALREADY_CLAIMED));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("REQUEST_ALREADY_CLAIMED"));
     }
 
 }
