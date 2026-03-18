@@ -4,6 +4,7 @@ import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
 import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
 import com.actvn.enotary.dto.response.AppointmentResponse;
+import com.actvn.enotary.dto.response.DocumentRequirementResponse;
 import com.actvn.enotary.dto.response.DocumentResponse;
 import com.actvn.enotary.dto.response.NotaryRequestResponse;
 import com.actvn.enotary.entity.Document;
@@ -48,8 +49,9 @@ public class NotaryRequestController {
         String email = userDetails.getUsername();
 
         NotaryRequest created = notaryRequestService.createRequest(email, request);
+        DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(created.getRequestId());
         URI location = URI.create("/api/requests/" + created.getRequestId());
-        return ResponseEntity.created(location).body(NotaryRequestResponse.fromEntity(created));
+        return ResponseEntity.created(location).body(NotaryRequestResponse.fromEntity(created, documentRequirements));
     }
 
     @GetMapping("/{id}")
@@ -76,7 +78,32 @@ public class NotaryRequestController {
             return ResponseEntity.status(403).build();
         }
 
-        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(r));
+        DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(id);
+        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(r, documentRequirements));
+    }
+
+    @GetMapping("/{id}/document-requirements")
+    public ResponseEntity<DocumentRequirementResponse> getDocumentRequirements(
+            Authentication authentication,
+            @PathVariable("id") UUID id) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        String email = userDetails.getUsername();
+
+        NotaryRequest r = notaryRequestService.getById(id);
+
+        boolean isOwner = r.getClient() != null && r.getClient().getEmail().equals(email);
+        boolean isAssignedNotary = r.getNotary() != null && r.getNotary().getEmail().equals(email);
+        boolean isAdmin = userDetails.getRole().name().equals("ADMIN");
+
+        if (!isOwner && !isAssignedNotary && !isAdmin) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(notaryRequestService.getDocumentRequirements(id));
     }
 
     @GetMapping("/me")
@@ -168,7 +195,8 @@ public class NotaryRequestController {
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
-        if (!"NOTARY".equals(role)) {
+        boolean isNotary = "NOTARY".equals(role);
+        if (!isNotary) {
             return ResponseEntity.status(403).build();
         }
 
@@ -185,7 +213,6 @@ public class NotaryRequestController {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             return ResponseEntity.status(401).build();
         }
-
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
         boolean isNotary = "NOTARY".equals(role);
@@ -202,7 +229,7 @@ public class NotaryRequestController {
     @GetMapping("/filter")
     public ResponseEntity<Page<NotaryRequestResponse>> filterRequestsForNotary(
             Authentication authentication,
-            @RequestParam("status") RequestStatus status,
+            @RequestParam(value = "status", required = false) RequestStatus status,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
@@ -222,6 +249,28 @@ public class NotaryRequestController {
         UUID notaryUserId = userDetails.getId();
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
         Page<NotaryRequest> pageResult = notaryRequestService.listForNotaryByStatus(notaryUserId, status, pr);
+        Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/me/accepted")
+    public ResponseEntity<Page<NotaryRequestResponse>> listAcceptedRequestsForCurrentNotary(
+            Authentication authentication,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size
+    ) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
+        if (!"NOTARY".equals(role)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
+        Page<NotaryRequest> pageResult = notaryRequestService.listAcceptedByNotary(userDetails.getId(), pr);
         Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
         return ResponseEntity.ok(resp);
     }
