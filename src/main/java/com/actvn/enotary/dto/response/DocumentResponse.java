@@ -17,6 +17,7 @@ public class DocumentResponse {
     private DocType docType;
     private String fileHash;
     private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 
     public static DocumentResponse fromEntity(com.actvn.enotary.entity.Document d) {
         return DocumentResponse.builder()
@@ -26,6 +27,7 @@ public class DocumentResponse {
                 .absolutePath(null)
                 .docType(d.getDocType())
                 .fileHash(d.getFileHash())
+                .updatedAt(d.getUpdatedAt())
                 .createdAt(d.getCreatedAt())
                 .build();
     }

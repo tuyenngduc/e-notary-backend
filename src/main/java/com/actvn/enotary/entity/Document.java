@@ -26,4 +26,5 @@ public class Document {
 
     private String fileHash;
     private OffsetDateTime createdAt = OffsetDateTime.now();
+    private OffsetDateTime updatedAt;
 }

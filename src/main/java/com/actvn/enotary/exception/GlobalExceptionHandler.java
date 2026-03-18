@@ -28,7 +28,9 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST.value(),
                 ErrorCode.VALIDATION_ERROR.name(),
                 "Dữ liệu đầu vào không hợp lệ",
-                errors
+                "VALIDATION_ERROR",
+                errors,
+                null
         );
 
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
@@ -44,7 +46,9 @@ public class GlobalExceptionHandler {
                 ex.getStatus().value(),
                 errorCode,
                 ex.getMessage(),
-                null
+                ex.getCode(),
+                null,
+                ex.getDetails()
         );
         return new ResponseEntity<>(errorResponse, ex.getStatus());
     }
@@ -55,6 +59,8 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNAUTHORIZED.value(),
                 ErrorCode.AUTHENTICATION_FAILED.name(),
                 "Authentication failed.",
+                "AUTHENTICATION_FAILED",
+                null,
                 null
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
