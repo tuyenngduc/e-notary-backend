@@ -1,12 +1,12 @@
 package com.actvn.enotary.controller;
 
+import com.actvn.enotary.dto.response.DocumentResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.exception.AppException;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.PathResource;
 import org.springframework.http.HttpHeaders;
@@ -15,8 +15,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,11 +32,25 @@ public class DocumentController {
     private final DocumentRepository documentRepository;
     private final NotaryRequestService notaryRequestService;
 
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentResponse> replaceDocument(
+            Authentication authentication,
+            @PathVariable("id") UUID id,
+            @RequestParam("file") MultipartFile file
+    ) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Document updated = notaryRequestService.replaceDocument(id, userDetails.getUsername(), file);
+        return ResponseEntity.ok(DocumentResponse.fromEntity(updated));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> downloadDocument(
             Authentication authentication,
-            @PathVariable("id") UUID id,
-            HttpServletRequest request
+            @PathVariable("id") UUID id
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             return ResponseEntity.status(401).build();
