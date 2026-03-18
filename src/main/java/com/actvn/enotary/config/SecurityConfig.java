@@ -40,6 +40,8 @@ public class SecurityConfig {
                                 SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/video/verify-token").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/video/room/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/requests").hasRole("CLIENT")
                         .requestMatchers("/api/profile/**").hasRole("CLIENT")

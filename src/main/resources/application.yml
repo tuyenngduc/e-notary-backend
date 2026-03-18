@@ -22,12 +22,23 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
 
 
 jwt:
-  secret: ${JWT_SECRET:1912C50BBE349F81043F6BC7A2E440E708C02E4F2A2E38A87049BA5BA9FB19E7B93206AE55412E28449360F0FC25CF1C2626609BA96CAAF05E113DCB759279E4}
-  expiration: ${JWT_EXPIRATION:900000} # 15 minutes in ms
-  refreshExpiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days in ms
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION}
+  refreshExpiration: ${JWT_REFRESH_EXPIRATION}
 
 logging:
   level:
@@ -39,3 +50,5 @@ app:
     password: ${ADMIN_PASSWORD:DefaultAdmin@123}
   meeting:
     base-url: ${MEETING_BASE_URL:http://localhost:8080}
+  mail:
+    enabled: ${MAIL_ENABLED:true}

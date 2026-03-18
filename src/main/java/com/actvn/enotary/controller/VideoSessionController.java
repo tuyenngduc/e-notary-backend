@@ -133,11 +133,9 @@ public class VideoSessionController {
     public ResponseEntity<String> getVideoRoom(
             @PathVariable("roomId") String roomId,
             @RequestParam(value = "token", required = false) String token) {
-        // Nếu có token, verify nó
         if (token != null && !token.isBlank()) {
             videoSessionService.verifySessionToken(token);
         }
-        // Return HTML simple test page (hoặc redirect to frontend)
         String html = """
                 <html>
                 <head>

@@ -4,6 +4,7 @@ import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
 import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
 import com.actvn.enotary.dto.response.AppointmentResponse;
+import com.actvn.enotary.dto.response.DocumentRequirementResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
@@ -12,6 +13,8 @@ import com.actvn.enotary.enums.ContractType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCodes;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,10 +34,12 @@ import org.springframework.data.domain.PageRequest;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -99,8 +104,16 @@ class NotaryRequestControllerTest {
         created.setCreatedAt(OffsetDateTime.now());
         created.setUpdatedAt(OffsetDateTime.now());
 
+        DocumentRequirementResponse documentRequirements = DocumentRequirementResponse.builder()
+                .requiredDocTypes(List.of(DocType.ID_CARD, DocType.PROPERTY_PAPER, DocType.DRAFT_CONTRACT))
+                .uploadedDocTypes(List.of())
+                .missingDocTypes(List.of(DocType.ID_CARD, DocType.PROPERTY_PAPER, DocType.DRAFT_CONTRACT))
+                .readyForAccept(false)
+                .build();
+
         when(notaryRequestService.createRequest(eq(clientUser.getEmail()), any(NotaryRequestCreateRequest.class)))
                 .thenReturn(created);
+        when(notaryRequestService.getDocumentRequirements(created.getRequestId())).thenReturn(documentRequirements);
 
         mockMvc.perform(post("/api/requests")
                         .principal(clientAuth)
@@ -111,7 +124,8 @@ class NotaryRequestControllerTest {
                 .andExpect(jsonPath("$.requestId").value(created.getRequestId().toString()))
                 .andExpect(jsonPath("$.clientId").value(clientUser.getUserId().toString()))
                 .andExpect(jsonPath("$.serviceType").value("ONLINE"))
-                .andExpect(jsonPath("$.contractType").value("TRANSFER_OF_PROPERTY"));
+                .andExpect(jsonPath("$.contractType").value("TRANSFER_OF_PROPERTY"))
+                .andExpect(jsonPath("$.documentRequirements.requiredDocTypes[0]").value("ID_CARD"));
     }
 
     @Test
@@ -127,13 +141,22 @@ class NotaryRequestControllerTest {
         r.setCreatedAt(OffsetDateTime.now());
         r.setUpdatedAt(OffsetDateTime.now());
 
+        DocumentRequirementResponse documentRequirements = DocumentRequirementResponse.builder()
+                .requiredDocTypes(List.of(DocType.ID_CARD, DocType.DRAFT_CONTRACT))
+                .uploadedDocTypes(List.of(DocType.ID_CARD))
+                .missingDocTypes(List.of(DocType.DRAFT_CONTRACT))
+                .readyForAccept(false)
+                .build();
+
         when(notaryRequestService.getById(rid)).thenReturn(r);
+        when(notaryRequestService.getDocumentRequirements(rid)).thenReturn(documentRequirements);
 
         mockMvc.perform(get("/api/requests/" + rid)
                         .principal(clientAuth))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.clientId").value(clientUser.getUserId().toString()));
+                .andExpect(jsonPath("$.clientId").value(clientUser.getUserId().toString()))
+                .andExpect(jsonPath("$.documentRequirements.missingDocTypes[0]").value("DRAFT_CONTRACT"));
     }
 
     @Test
@@ -192,6 +215,48 @@ class NotaryRequestControllerTest {
                         .principal(clientAuth))
                 .andExpect(status().isCreated())
                 .andExpect(header().exists("Location"));
+    }
+
+    @Test
+    void getDocumentRequirements_ownerCanView() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setClient(clientUser);
+
+        DocumentRequirementResponse response = DocumentRequirementResponse.builder()
+                .requiredDocTypes(List.of(DocType.ID_CARD, DocType.DRAFT_CONTRACT))
+                .uploadedDocTypes(List.of(DocType.ID_CARD))
+                .missingDocTypes(List.of(DocType.DRAFT_CONTRACT))
+                .readyForAccept(false)
+                .build();
+
+        when(notaryRequestService.getById(rid)).thenReturn(r);
+        when(notaryRequestService.getDocumentRequirements(rid)).thenReturn(response);
+
+        mockMvc.perform(get("/api/requests/" + rid + "/document-requirements")
+                        .principal(clientAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requiredDocTypes[0]").value("ID_CARD"))
+                .andExpect(jsonPath("$.missingDocTypes[0]").value("DRAFT_CONTRACT"))
+                .andExpect(jsonPath("$.readyForAccept").value(false));
+    }
+
+    @Test
+    void getDocumentRequirements_forbiddenForOtherUser() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        User other = new User();
+        other.setUserId(UUID.randomUUID());
+        other.setEmail("other@example.com");
+        r.setClient(other);
+
+        when(notaryRequestService.getById(rid)).thenReturn(r);
+
+        mockMvc.perform(get("/api/requests/" + rid + "/document-requirements")
+                        .principal(clientAuth))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -273,6 +338,53 @@ class NotaryRequestControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+                    @Test
+                    void acceptRequest_notaryCanAccept() throws Exception {
+                        UUID rid = UUID.randomUUID();
+
+                        NotaryRequest updated = new NotaryRequest();
+                        updated.setRequestId(rid);
+                        updated.setClient(clientUser);
+                        updated.setNotary(notaryUser);
+                        updated.setStatus(RequestStatus.PROCESSING);
+
+                        when(notaryRequestService.acceptRequest(eq(rid), eq(notaryUser.getEmail()))).thenReturn(updated);
+
+                        mockMvc.perform(post("/api/requests/" + rid + "/accept")
+                                        .principal(notaryAuth))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                                .andExpect(jsonPath("$.notaryId").value(notaryUser.getUserId().toString()));
+                    }
+
+                    @Test
+                    void acceptRequest_clientForbidden() throws Exception {
+                        UUID rid = UUID.randomUUID();
+
+                        mockMvc.perform(post("/api/requests/" + rid + "/accept")
+                                        .principal(clientAuth))
+                                .andExpect(status().isForbidden());
+                    }
+
+                                    @Test
+                                    void acceptRequest_missingDocuments_returnsCodeAndMissingDocTypes() throws Exception {
+                                        UUID rid = UUID.randomUUID();
+
+                                        when(notaryRequestService.acceptRequest(eq(rid), eq(notaryUser.getEmail())))
+                                                .thenThrow(new AppException(
+                                                        "Hồ sơ chưa đủ để tiếp nhận. Thiếu: DRAFT_CONTRACT",
+                                                        org.springframework.http.HttpStatus.BAD_REQUEST,
+                                                        ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS,
+                                                        Map.of("missingDocTypes", List.of("DRAFT_CONTRACT"))
+                                                ));
+
+                                        mockMvc.perform(post("/api/requests/" + rid + "/accept")
+                                                        .principal(notaryAuth))
+                                                .andExpect(status().isBadRequest())
+                                                .andExpect(jsonPath("$.code").value(ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS))
+                                                .andExpect(jsonPath("$.details.missingDocTypes[0]").value("DRAFT_CONTRACT"));
+                                    }
+
     @Test
     void filterRequests_newStatus_returnsAllNewRequests() throws Exception {
         UUID rid = UUID.randomUUID();
@@ -328,6 +440,69 @@ class NotaryRequestControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
                 .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+    }
+
+    @Test
+    void filterRequests_withoutStatus_returnsVisibleRequests() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setClient(clientUser);
+        r.setNotary(notaryUser);
+        r.setServiceType(ServiceType.OFFLINE);
+        r.setContractType(ContractType.WILL);
+        r.setDescription("desc");
+        r.setStatus(RequestStatus.PROCESSING);
+        r.setCreatedAt(OffsetDateTime.now());
+        r.setUpdatedAt(OffsetDateTime.now());
+
+        var page = new PageImpl<>(List.of(r), PageRequest.of(0, 10), 1);
+
+        when(notaryRequestService.listForNotaryByStatus(eq(notaryUser.getUserId()), isNull(), any(PageRequest.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/requests/filter")
+                        .param("page", "0")
+                        .param("size", "10")
+                        .principal(notaryAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+    }
+
+    @Test
+    void listAcceptedRequestsForCurrentNotary_returnsAssignedRequests() throws Exception {
+        UUID rid = UUID.randomUUID();
+        NotaryRequest r = new NotaryRequest();
+        r.setRequestId(rid);
+        r.setClient(clientUser);
+        r.setNotary(notaryUser);
+        r.setServiceType(ServiceType.OFFLINE);
+        r.setContractType(ContractType.WILL);
+        r.setDescription("accepted");
+        r.setStatus(RequestStatus.PROCESSING);
+        r.setCreatedAt(OffsetDateTime.now());
+        r.setUpdatedAt(OffsetDateTime.now());
+
+        var page = new PageImpl<>(List.of(r), PageRequest.of(0, 10), 1);
+
+        when(notaryRequestService.listAcceptedByNotary(eq(notaryUser.getUserId()), any(PageRequest.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/requests/me/accepted")
+                        .param("page", "0")
+                        .param("size", "10")
+                        .principal(notaryAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+    }
+
+    @Test
+    void listAcceptedRequestsForCurrentNotary_clientForbidden() throws Exception {
+        mockMvc.perform(get("/api/requests/me/accepted")
+                        .principal(clientAuth))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -445,6 +620,27 @@ class NotaryRequestControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void scheduleAppointment_alreadyAssigned_returnsStandardizedConflictCode() throws Exception {
+        UUID rid = UUID.randomUUID();
+        ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
+        req.setScheduledTime(OffsetDateTime.now().plusDays(1));
+
+        when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
+                .thenThrow(new AppException(
+                        "Yêu cầu đã được công chứng viên khác tiếp nhận",
+                        org.springframework.http.HttpStatus.CONFLICT,
+                        ErrorCodes.REQUEST_ALREADY_ASSIGNED
+                ));
+
+        mockMvc.perform(post("/api/requests/" + rid + "/schedule")
+                        .principal(notaryAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCodes.REQUEST_ALREADY_ASSIGNED));
     }
 
 }

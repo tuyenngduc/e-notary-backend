@@ -57,7 +57,7 @@
      ...
    }
 
-6. Client nhận email chứa meeting link
+6. Client nhận email chứa meeting link (nếu SMTP đã cấu hình)
 
 7. Client click link → Verify token → UI để join
    POST /api/video/room/{roomId}/join
@@ -200,16 +200,37 @@ CREATE INDEX idx_video_sessions_created_at ON video_sessions(created_at DESC);
 app:
   meeting:
     base-url: ${MEETING_BASE_URL:http://localhost:8080}
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+
+spring:
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
 ```
 
 ### Environment Variables
 ```bash
 # Development
 export MEETING_BASE_URL="http://localhost:8080"
+export MAIL_ENABLED=true
+export MAIL_HOST="smtp.gmail.com"
+export MAIL_PORT="587"
+export MAIL_USERNAME="your-account@gmail.com"
+export MAIL_PASSWORD="your-app-password"
 
 # Production
 export MEETING_BASE_URL="https://yourdomain.com"
+export MAIL_ENABLED=true
+export MAIL_HOST="smtp.yourprovider.com"
+export MAIL_PORT="587"
+export MAIL_USERNAME="smtp-user"
+export MAIL_PASSWORD="smtp-password"
 ```
+
+> Nếu chưa cấu hình SMTP, backend vẫn schedule appointment bình thường và ghi log cảnh báo, không làm fail API.
 
 ## Security & Authorization
 
@@ -283,9 +304,13 @@ curl -X POST http://localhost:8080/api/video/room/{roomId}/join \
   - Added `VideoSessionRepository` dependency
   - Added automatic VideoSession creation for ONLINE appointments
   - Added `baseUrl` configuration
+- ✅ `src/main/java/com/actvn/enotary/service/AppointmentEmailService.java`
+  - Sends meeting-link email to client after ONLINE scheduling
+  - Graceful fallback when SMTP is missing/unavailable
   
 - ✅ `src/main/resources/application.yml`
   - Added `app.meeting.base-url` configuration
+  - Added `app.mail.*` and `spring.mail.*` configuration
 
 ## Build & Run
 
@@ -326,7 +351,7 @@ java -jar target/enotary-0.0.1-SNAPSHOT.jar
 - [ ] Video Recording
 - [ ] Screen Sharing
 - [ ] Call Timeout Auto-Cancel
-- [ ] Email Notifications
+- [x] Email Notifications
 - [ ] Call Quality Metrics
 - [ ] WebRTC Integration (Jitsi/Daily.co)
 - [ ] Participant Management
@@ -335,6 +360,6 @@ java -jar target/enotary-0.0.1-SNAPSHOT.jar
 ---
 
 **Status**: ✅ Complete & Ready to Deploy  
-**Last Updated**: March 11, 2026  
-**Version**: 1.0.0
+**Last Updated**: March 19, 2026  
+**Version**: 1.1.0
 

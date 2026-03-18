@@ -2,29 +2,42 @@ package com.actvn.enotary.service;
 
 import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
 import com.actvn.enotary.dto.response.AppointmentResponse;
+import com.actvn.enotary.dto.response.DocumentRequirementResponse;
+import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.User;
 import com.actvn.enotary.enums.AppointmentStatus;
+import com.actvn.enotary.enums.ContractType;
+import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCodes;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
 import com.actvn.enotary.repository.UserRepository;
+import com.actvn.enotary.repository.VideoSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,11 +55,313 @@ class NotaryRequestServiceTest {
     @Mock
     AppointmentRepository appointmentRepository;
 
+    @Mock
+    VideoSessionRepository videoSessionRepository;
+
+    @Mock
+    AppointmentEmailService appointmentEmailService;
+
     NotaryRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new NotaryRequestService(notaryRequestRepository, userRepository, documentRepository, appointmentRepository);
+        service = new NotaryRequestService(
+                notaryRequestRepository,
+                userRepository,
+                documentRepository,
+                appointmentRepository,
+                videoSessionRepository,
+                appointmentEmailService
+        );
+    }
+
+    @Test
+    void acceptRequest_notaryAcceptsWhenRequiredDocumentsArePresent() {
+        UUID rid = UUID.randomUUID();
+
+        User notary = new User();
+        notary.setUserId(UUID.randomUUID());
+        notary.setEmail("notary@example.com");
+        notary.setRole(Role.NOTARY);
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(rid);
+        request.setStatus(RequestStatus.NEW);
+
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(request));
+        when(documentRepository.findDocTypesByRequestId(rid)).thenReturn(List.of(
+                com.actvn.enotary.enums.DocType.ID_CARD,
+                com.actvn.enotary.enums.DocType.DRAFT_CONTRACT
+        ));
+        when(notaryRequestRepository.save(any(NotaryRequest.class))).thenAnswer(i -> i.getArgument(0));
+
+        NotaryRequest out = service.acceptRequest(rid, "notary@example.com");
+
+        assertEquals(RequestStatus.PROCESSING, out.getStatus());
+        assertEquals(notary.getUserId(), out.getNotary().getUserId());
+    }
+
+    @Test
+    void acceptRequest_missingRequiredDocuments_returns400() {
+        UUID rid = UUID.randomUUID();
+
+        User notary = new User();
+        notary.setUserId(UUID.randomUUID());
+        notary.setEmail("notary@example.com");
+        notary.setRole(Role.NOTARY);
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(rid);
+        request.setStatus(RequestStatus.NEW);
+
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(request));
+        when(documentRepository.findDocTypesByRequestId(rid)).thenReturn(List.of(com.actvn.enotary.enums.DocType.ID_CARD));
+
+        AppException ex = assertThrows(AppException.class, () -> service.acceptRequest(rid, "notary@example.com"));
+        assertEquals(400, ex.getStatus().value());
+    }
+
+    @Test
+    void acceptRequest_alreadyAcceptedByAnotherNotary_returns409() {
+        UUID rid = UUID.randomUUID();
+
+        User currentNotary = new User();
+        currentNotary.setUserId(UUID.randomUUID());
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(rid);
+        request.setStatus(RequestStatus.PROCESSING);
+        request.setNotary(currentNotary);
+
+        User newNotary = new User();
+        newNotary.setUserId(UUID.randomUUID());
+        newNotary.setEmail("notary@example.com");
+        newNotary.setRole(Role.NOTARY);
+
+        when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(newNotary));
+        when(notaryRequestRepository.findByIdForUpdate(rid)).thenReturn(Optional.of(request));
+
+        AppException ex = assertThrows(AppException.class, () -> service.acceptRequest(rid, "notary@example.com"));
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    @Test
+    void listForNotaryByStatus_whenStatusNull_returnsNewOrAssigned() {
+        UUID notaryId = UUID.randomUUID();
+        var pageRequest = PageRequest.of(0, 10);
+        var page = new PageImpl<NotaryRequest>(List.of());
+
+        when(notaryRequestRepository.findByStatusOrNotaryUserId(RequestStatus.NEW, notaryId, pageRequest)).thenReturn(page);
+
+        var result = service.listForNotaryByStatus(notaryId, null, pageRequest);
+
+        assertSame(page, result);
+        verify(notaryRequestRepository).findByStatusOrNotaryUserId(RequestStatus.NEW, notaryId, pageRequest);
+        verify(notaryRequestRepository, never()).findByStatus(any(), any());
+        verify(notaryRequestRepository, never()).findByNotaryUserIdAndStatus(any(), any(), any());
+    }
+
+    @Test
+    void listForNotaryByStatus_whenStatusNew_returnsGlobalNewRequests() {
+        UUID notaryId = UUID.randomUUID();
+        var pageRequest = PageRequest.of(0, 10);
+        var page = new PageImpl<NotaryRequest>(List.of());
+
+        when(notaryRequestRepository.findByStatus(RequestStatus.NEW, pageRequest)).thenReturn(page);
+
+        var result = service.listForNotaryByStatus(notaryId, RequestStatus.NEW, pageRequest);
+
+        assertSame(page, result);
+        verify(notaryRequestRepository).findByStatus(RequestStatus.NEW, pageRequest);
+        verify(notaryRequestRepository, never()).findByStatusOrNotaryUserId(any(), any(), any());
+        verify(notaryRequestRepository, never()).findByNotaryUserIdAndStatus(any(), any(), any());
+    }
+
+    @Test
+    void listAcceptedByNotary_returnsAssignedRequests() {
+        UUID notaryId = UUID.randomUUID();
+        var pageRequest = PageRequest.of(0, 10);
+        var page = new PageImpl<NotaryRequest>(List.of());
+
+        when(notaryRequestRepository.findByNotaryUserId(notaryId, pageRequest)).thenReturn(page);
+
+        var result = service.listAcceptedByNotary(notaryId, pageRequest);
+
+        assertSame(page, result);
+        verify(notaryRequestRepository).findByNotaryUserId(eq(notaryId), eq(pageRequest));
+    }
+
+    @Test
+    void getDocumentRequirements_transferOfProperty_returnsRequiredUploadedAndMissingDocTypes() {
+        UUID requestId = UUID.randomUUID();
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(requestId);
+        request.setContractType(ContractType.TRANSFER_OF_PROPERTY);
+
+        when(notaryRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(documentRepository.findDocTypesByRequestId(requestId))
+                .thenReturn(List.of(DocType.ID_CARD, DocType.ID_CARD));
+
+        DocumentRequirementResponse response = service.getDocumentRequirements(requestId);
+
+        assertEquals(List.of(DocType.ID_CARD, DocType.PROPERTY_PAPER, DocType.DRAFT_CONTRACT), response.getRequiredDocTypes());
+        assertEquals(List.of(DocType.ID_CARD), response.getUploadedDocTypes());
+        assertEquals(List.of(DocType.PROPERTY_PAPER, DocType.DRAFT_CONTRACT), response.getMissingDocTypes());
+        assertFalse(response.isReadyForAccept());
+    }
+
+    @Test
+    void uploadDocument_terminalStatus_returns409() {
+        UUID requestId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        User owner = new User();
+        owner.setUserId(userId);
+        owner.setEmail("client@example.com");
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(requestId);
+        request.setClient(owner);
+        request.setStatus(RequestStatus.COMPLETED);
+
+        when(notaryRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(owner));
+
+        MockMultipartFile file = new MockMultipartFile("file", "doc.txt", "text/plain", "data".getBytes());
+        AppException ex = assertThrows(AppException.class,
+                () -> service.uploadDocument(requestId, "client@example.com", file, DocType.DRAFT_CONTRACT));
+
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(ErrorCodes.REQUEST_TERMINAL_STATUS, ex.getCode());
+    }
+
+    @Test
+    void replaceDocument_terminalStatus_returns409() {
+        UUID documentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        User owner = new User();
+        owner.setUserId(userId);
+        owner.setEmail("client@example.com");
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(UUID.randomUUID());
+        request.setClient(owner);
+        request.setStatus(RequestStatus.REJECTED);
+
+        Document document = new Document();
+        document.setDocumentId(documentId);
+        document.setRequest(request);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(owner));
+
+        MockMultipartFile file = new MockMultipartFile("file", "doc.txt", "text/plain", "data".getBytes());
+        AppException ex = assertThrows(AppException.class,
+                () -> service.replaceDocument(documentId, "client@example.com", file));
+
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(ErrorCodes.REQUEST_TERMINAL_STATUS, ex.getCode());
+    }
+
+    @Test
+    void replaceDocument_signedDocumentType_notAllowed() {
+        UUID documentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        User owner = new User();
+        owner.setUserId(userId);
+        owner.setEmail("client@example.com");
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(UUID.randomUUID());
+        request.setClient(owner);
+        request.setStatus(RequestStatus.PROCESSING);
+
+        Document document = new Document();
+        document.setDocumentId(documentId);
+        document.setRequest(request);
+        document.setDocType(DocType.SIGNED_DOCUMENT);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(owner));
+
+        MockMultipartFile file = new MockMultipartFile("file", "doc.txt", "text/plain", "data".getBytes());
+        AppException ex = assertThrows(AppException.class,
+                () -> service.replaceDocument(documentId, "client@example.com", file));
+
+        assertEquals(400, ex.getStatus().value());
+        assertEquals(ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED, ex.getCode());
+    }
+
+    @Test
+    void replaceDocument_sessionVideo_afterSignedDocumentExists_notAllowed() {
+        UUID documentId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        User owner = new User();
+        owner.setUserId(userId);
+        owner.setEmail("client@example.com");
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(requestId);
+        request.setClient(owner);
+        request.setStatus(RequestStatus.SCHEDULED);
+
+        Document document = new Document();
+        document.setDocumentId(documentId);
+        document.setRequest(request);
+        document.setDocType(DocType.SESSION_VIDEO);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(owner));
+        when(documentRepository.findDocTypesByRequestId(requestId))
+                .thenReturn(List.of(DocType.SESSION_VIDEO, DocType.SIGNED_DOCUMENT));
+
+        MockMultipartFile file = new MockMultipartFile("file", "video.mp4", "video/mp4", "data".getBytes());
+        AppException ex = assertThrows(AppException.class,
+                () -> service.replaceDocument(documentId, "client@example.com", file));
+
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED, ex.getCode());
+    }
+
+    @Test
+    void replaceDocument_sessionVideo_beforeSignedDocumentExists_allowed() {
+        UUID documentId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        User owner = new User();
+        owner.setUserId(userId);
+        owner.setEmail("client@example.com");
+
+        NotaryRequest request = new NotaryRequest();
+        request.setRequestId(requestId);
+        request.setClient(owner);
+        request.setStatus(RequestStatus.SCHEDULED);
+
+        Document document = new Document();
+        document.setDocumentId(documentId);
+        document.setRequest(request);
+        document.setDocType(DocType.SESSION_VIDEO);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(userRepository.findByEmail("client@example.com")).thenReturn(Optional.of(owner));
+        when(documentRepository.findDocTypesByRequestId(requestId))
+                .thenReturn(List.of(DocType.SESSION_VIDEO));
+        when(documentRepository.save(any(Document.class))).thenAnswer(i -> i.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile("file", "video.mp4", "video/mp4", "data".getBytes());
+        Document out = service.replaceDocument(documentId, "client@example.com", file);
+
+        assertEquals(documentId, out.getDocumentId());
+        assertNotNull(out.getFileHash());
+        assertNotNull(out.getUpdatedAt());
     }
 
     @Test
@@ -159,7 +474,7 @@ class NotaryRequestServiceTest {
 
         AppException ex = assertThrows(AppException.class,
                 () -> service.rejectRequest(rid, "another-notary@example.com", "Không hợp lệ"));
-        assertEquals(403, ex.getStatus().value());
+        assertEquals(409, ex.getStatus().value());
     }
 
     @Test
@@ -199,6 +514,7 @@ class NotaryRequestServiceTest {
         assertNull(resp.getMeetingUrl());
         assertEquals(ServiceType.OFFLINE, resp.getServiceType());
         assertEquals(RequestStatus.SCHEDULED, r.getStatus());
+        verify(appointmentEmailService, never()).sendOnlineMeetingLinkToClient(any(), any());
     }
 
     @Test
@@ -233,8 +549,10 @@ class NotaryRequestServiceTest {
         AppointmentResponse resp = service.scheduleAppointment(rid, "notary@example.com", req);
 
         assertNull(resp.getPhysicalAddress());
-        assertNull(resp.getMeetingUrl());
+        assertNotNull(resp.getMeetingUrl());
+        assertTrue(resp.getMeetingUrl().contains("/api/video/room/"));
         assertEquals(ServiceType.ONLINE, resp.getServiceType());
+        verify(appointmentEmailService).sendOnlineMeetingLinkToClient(eq(r), any());
     }
 
     @Test
@@ -315,7 +633,7 @@ class NotaryRequestServiceTest {
 
         AppException ex = assertThrows(AppException.class,
                 () -> service.scheduleAppointment(rid, "other@example.com", req));
-        assertEquals(403, ex.getStatus().value());
+        assertEquals(409, ex.getStatus().value());
     }
 }
 

@@ -3,6 +3,7 @@ package com.actvn.enotary.service;
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
 import com.actvn.enotary.dto.response.AppointmentResponse;
+import com.actvn.enotary.dto.response.DocumentRequirementResponse;
 import com.actvn.enotary.entity.Appointment;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
@@ -14,6 +15,7 @@ import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.VideoSessionStatus;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCodes;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -29,13 +31,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -46,6 +52,7 @@ public class NotaryRequestService {
     private final DocumentRepository documentRepository;
     private final AppointmentRepository appointmentRepository;
     private final VideoSessionRepository videoSessionRepository;
+    private final AppointmentEmailService appointmentEmailService;
 
     @Value("${app.meeting.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -74,12 +81,93 @@ public class NotaryRequestService {
                 .orElseThrow(() -> new AppException("Không tìm thấy yêu cầu công chứng", HttpStatus.NOT_FOUND));
     }
 
+    @Transactional
+    public NotaryRequest acceptRequest(UUID requestId, String notaryEmail) {
+        User notary = userRepository.findByEmail(notaryEmail)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+
+        boolean isNotary = notary.getRole() != null && notary.getRole().name().equals("NOTARY");
+        if (!isNotary) {
+            throw new AppException("Chỉ công chứng viên mới có quyền tiếp nhận yêu cầu", HttpStatus.FORBIDDEN);
+        }
+
+        NotaryRequest request = notaryRequestRepository.findByIdForUpdate(requestId)
+                .orElseThrow(() -> new AppException("Không tìm thấy yêu cầu công chứng", HttpStatus.NOT_FOUND));
+
+        if (request.getStatus() != RequestStatus.NEW) {
+            if (request.getNotary() != null) {
+                throw alreadyAssignedException();
+            }
+            throw new AppException("Yêu cầu không ở trạng thái NEW để tiếp nhận", HttpStatus.BAD_REQUEST);
+        }
+
+        DocumentRequirementResponse documentRequirements = buildDocumentRequirements(request);
+        if (!documentRequirements.isReadyForAccept()) {
+            String missing = documentRequirements.getMissingDocTypes().stream().map(Enum::name).collect(java.util.stream.Collectors.joining(", "));
+            throw new AppException(
+                    "Hồ sơ chưa đủ để tiếp nhận. Thiếu: " + missing,
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS,
+                    Map.of("missingDocTypes", documentRequirements.getMissingDocTypes().stream().map(Enum::name).toList())
+            );
+        }
+
+        request.setNotary(notary);
+        request.setStatus(RequestStatus.PROCESSING);
+        request.setUpdatedAt(OffsetDateTime.now());
+        return notaryRequestRepository.save(request);
+    }
+
+    private Set<DocType> requiredDocTypesForAccept(NotaryRequest request) {
+        EnumSet<DocType> required = EnumSet.of(DocType.ID_CARD, DocType.DRAFT_CONTRACT);
+        if (request.getContractType() == com.actvn.enotary.enums.ContractType.TRANSFER_OF_PROPERTY) {
+            required.add(DocType.PROPERTY_PAPER);
+        }
+        return required;
+    }
+
+    public DocumentRequirementResponse getDocumentRequirements(UUID requestId) {
+        return buildDocumentRequirements(getById(requestId));
+    }
+
+    private DocumentRequirementResponse buildDocumentRequirements(NotaryRequest request) {
+        List<DocType> uploadedDocTypes = sortDocTypes(documentRepository.findDocTypesByRequestId(request.getRequestId()));
+        Set<DocType> uploadedSet = uploadedDocTypes.isEmpty()
+                ? EnumSet.noneOf(DocType.class)
+                : EnumSet.copyOf(uploadedDocTypes);
+
+        List<DocType> requiredDocTypes = sortDocTypes(requiredDocTypesForAccept(request));
+        List<DocType> missingDocTypes = requiredDocTypes.stream()
+                .filter(requiredType -> !uploadedSet.contains(requiredType))
+                .toList();
+
+        return DocumentRequirementResponse.builder()
+                .requiredDocTypes(requiredDocTypes)
+                .uploadedDocTypes(uploadedDocTypes)
+                .missingDocTypes(missingDocTypes)
+                .readyForAccept(missingDocTypes.isEmpty())
+                .build();
+    }
+
+    private List<DocType> sortDocTypes(Iterable<DocType> docTypes) {
+        EnumSet<DocType> unique = EnumSet.noneOf(DocType.class);
+        for (DocType docType : docTypes) {
+            if (docType != null) {
+                unique.add(docType);
+            }
+        }
+        return unique.stream().toList();
+    }
+
     public List<NotaryRequest> listForClient(UUID userId) {
         return notaryRequestRepository.findByClientUserId(userId);
     }
 
-    // New: paginated listing for notary with filter by status
+    // Paginated listing for notary; when status is null return NEW or requests already assigned to this notary
     public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, Pageable pageable) {
+        if (status == null) {
+            return notaryRequestRepository.findByStatusOrNotaryUserId(RequestStatus.NEW, notaryUserId, pageable);
+        }
         if (status == RequestStatus.NEW) {
             return notaryRequestRepository.findByStatus(status, pageable);
         }
@@ -89,6 +177,10 @@ public class NotaryRequestService {
     // Overload to accept PageRequest specifically (resolves compilation edge cases where compiler expects exact PageRequest type)
     public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, org.springframework.data.domain.PageRequest pageRequest) {
         return listForNotaryByStatus(notaryUserId, status, (Pageable) pageRequest);
+    }
+
+    public Page<NotaryRequest> listAcceptedByNotary(UUID notaryUserId, Pageable pageable) {
+        return notaryRequestRepository.findByNotaryUserId(notaryUserId, pageable);
     }
 
     private Path findProjectRoot() {
@@ -114,7 +206,7 @@ public class NotaryRequestService {
 
         // authorize: only client owner, assigned notary or admin can upload
         User uploader = userRepository.findByEmail(uploaderEmail)
-                .orElseThrow(() -> new AppException("Kh��ng tìm thấy người dùng", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
 
         boolean isOwner = request.getClient() != null && request.getClient().getUserId().equals(uploader.getUserId());
         boolean isAssignedNotary = request.getNotary() != null && request.getNotary().getUserId().equals(uploader.getUserId());
@@ -124,37 +216,133 @@ public class NotaryRequestService {
             throw new AppException("Không có quyền upload hồ sơ cho yêu cầu này", HttpStatus.FORBIDDEN);
         }
 
-        try {
-            // determine project root (search for pom.xml) and use projectRoot/uploads
-            Path projectRoot = findProjectRoot();
-            Path uploadsDir = projectRoot.resolve("uploads");
+        validateRequestIsNotTerminal(request);
 
+        StoredFileResult stored = storeFile(file);
+
+        Document doc = new Document();
+        doc.setRequest(request);
+        doc.setFilePath(stored.relativePath());
+        doc.setDocType(docType);
+        doc.setFileHash(stored.hash());
+        doc.setCreatedAt(OffsetDateTime.now());
+
+        return documentRepository.save(doc);
+    }
+
+    @Transactional
+    public Document replaceDocument(UUID documentId, String uploaderEmail, MultipartFile file) {
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException("Không tìm thấy tài liệu", HttpStatus.NOT_FOUND, ErrorCodes.DOCUMENT_NOT_FOUND));
+
+        NotaryRequest request = doc.getRequest();
+        User uploader = userRepository.findByEmail(uploaderEmail)
+                .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
+
+        boolean isOwner = request.getClient() != null && request.getClient().getUserId().equals(uploader.getUserId());
+        boolean isAssignedNotary = request.getNotary() != null && request.getNotary().getUserId().equals(uploader.getUserId());
+        boolean isAdmin = uploader.getRole() != null && uploader.getRole().name().equals("ADMIN");
+
+        if (!isOwner && !isAssignedNotary && !isAdmin) {
+            throw new AppException("Không có quyền cập nhật tài liệu cho yêu cầu này", HttpStatus.FORBIDDEN);
+        }
+
+        validateRequestIsNotTerminal(request);
+        validateDocumentCanBeReplaced(doc);
+
+        StoredFileResult stored = storeFile(file);
+        doc.setFilePath(stored.relativePath());
+        doc.setFileHash(stored.hash());
+        doc.setUpdatedAt(OffsetDateTime.now());
+        return documentRepository.save(doc);
+    }
+
+    private StoredFileResult storeFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException("File tải lên không hợp lệ", HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            Path projectRoot = findProjectRoot();
+            Path uploadsDir = projectRoot.resolve("uploads").normalize();
             Files.createDirectories(uploadsDir);
 
-            String filename = UUID.randomUUID() + "-" + file.getOriginalFilename();
-            Path target = uploadsDir.resolve(filename);
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            String originalName = file.getOriginalFilename() == null ? "document.bin" : file.getOriginalFilename();
+            String safeName = Path.of(originalName).getFileName().toString();
+            if (safeName.isBlank()) {
+                safeName = "document.bin";
+            }
+
+            String filename = UUID.randomUUID() + "-" + safeName;
+            Path target = uploadsDir.resolve(filename).normalize();
+            if (!target.startsWith(uploadsDir)) {
+                throw new AppException("Tên file không hợp lệ", HttpStatus.BAD_REQUEST);
+            }
+
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            }
 
             byte[] bytes = Files.readAllBytes(target);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] digest = md.digest(bytes);
             String hash = HexFormat.of().formatHex(digest);
 
-            Document doc = new Document();
-            doc.setRequest(request);
-            // store relative path from project root, e.g. uploads/uuid-filename
             Path relative = projectRoot.relativize(target);
-            doc.setFilePath(relative.toString().replace("\\", "/"));
-            doc.setDocType(docType);
-            doc.setFileHash(hash);
-            doc.setCreatedAt(OffsetDateTime.now());
-
-            return documentRepository.save(doc);
+            return new StoredFileResult(relative.toString().replace("\\", "/"), hash);
         } catch (IOException ex) {
             throw new AppException("Lỗi khi lưu file", HttpStatus.INTERNAL_SERVER_ERROR);
         } catch (Exception ex) {
             throw new AppException("Lỗi khi tính toán hash file", HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private void validateRequestIsNotTerminal(NotaryRequest request) {
+        if (request.getStatus() == RequestStatus.REJECTED
+                || request.getStatus() == RequestStatus.CANCELLED
+                || request.getStatus() == RequestStatus.COMPLETED) {
+            throw new AppException(
+                    "Không thể upload/cập nhật tài liệu khi yêu cầu đã kết thúc",
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.REQUEST_TERMINAL_STATUS,
+                    Map.of("status", request.getStatus().name())
+            );
+        }
+    }
+
+    private void validateDocumentCanBeReplaced(Document doc) {
+        DocType type = doc.getDocType();
+        EnumSet<DocType> replaceableTypes = EnumSet.of(
+                DocType.ID_CARD,
+                DocType.PROPERTY_PAPER,
+                DocType.DRAFT_CONTRACT,
+                DocType.SESSION_VIDEO
+        );
+
+        if (!replaceableTypes.contains(type)) {
+            throw new AppException(
+                    "Loại tài liệu này không được phép thay thế",
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                    Map.of("docType", type.name())
+            );
+        }
+
+        // Once final signed output exists, session evidence must become immutable.
+        if (type == DocType.SESSION_VIDEO) {
+            List<DocType> requestDocTypes = documentRepository.findDocTypesByRequestId(doc.getRequest().getRequestId());
+            if (requestDocTypes.contains(DocType.SIGNED_DOCUMENT)) {
+                throw new AppException(
+                        "Không thể thay thế SESSION_VIDEO sau khi đã tạo biên bản/ký số",
+                        HttpStatus.CONFLICT,
+                        ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                        Map.of("docType", type.name(), "reason", "SIGNED_DOCUMENT_EXISTS")
+                );
+            }
+        }
+    }
+
+    private record StoredFileResult(String relativePath, String hash) {
     }
 
     @Transactional
@@ -195,6 +383,11 @@ public class NotaryRequestService {
                 && request.getNotary().getUserId().equals(reviewer.getUserId());
 
         if (!isAdmin && !isAssignedNotary) {
+            if (request.getNotary() != null
+                    && reviewer.getRole() != null
+                    && reviewer.getRole().name().equals("NOTARY")) {
+                throw alreadyAssignedException();
+            }
             throw new AppException("Không có quyền lên lịch cho yêu cầu này", HttpStatus.FORBIDDEN);
         }
 
@@ -256,6 +449,10 @@ public class NotaryRequestService {
         request.setUpdatedAt(OffsetDateTime.now());
         notaryRequestRepository.save(request);
 
+        if (request.getServiceType() == ServiceType.ONLINE) {
+            appointmentEmailService.sendOnlineMeetingLinkToClient(request, saved);
+        }
+
         return AppointmentResponse.fromEntity(saved);
     }
 
@@ -273,6 +470,11 @@ public class NotaryRequestService {
                 && request.getNotary().getUserId().equals(reviewer.getUserId());
 
         if (!isAdmin && !isAssignedNotary) {
+            if (request.getNotary() != null
+                    && reviewer.getRole() != null
+                    && reviewer.getRole().name().equals("NOTARY")) {
+                throw alreadyAssignedException();
+            }
             throw new AppException("Không có quyền từ chối yêu cầu này", HttpStatus.FORBIDDEN);
         }
 
@@ -286,5 +488,13 @@ public class NotaryRequestService {
         request.setRejectionReason(reason == null ? null : reason.trim());
         request.setUpdatedAt(OffsetDateTime.now());
         return notaryRequestRepository.save(request);
+    }
+
+    private AppException alreadyAssignedException() {
+        return new AppException(
+                "Yêu cầu đã được công chứng viên khác tiếp nhận",
+                HttpStatus.CONFLICT,
+                ErrorCodes.REQUEST_ALREADY_ASSIGNED
+        );
     }
 }
