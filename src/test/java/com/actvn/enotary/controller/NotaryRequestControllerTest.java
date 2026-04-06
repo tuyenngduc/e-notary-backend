@@ -14,7 +14,6 @@ import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.exception.AppException;
-import com.actvn.enotary.exception.ErrorCodes;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -2,6 +2,8 @@ package com.actvn.enotary.controller;
 
 import com.actvn.enotary.dto.request.LoginRequest;
 import com.actvn.enotary.dto.request.RefreshRequest;
+import com.actvn.enotary.dto.response.ApiResponse;
+import com.actvn.enotary.dto.response.ApiResponseUtil;
 import com.actvn.enotary.dto.response.LoginResponse;
 import com.actvn.enotary.dto.response.RefreshTokenResponse;
 import com.actvn.enotary.service.AuthService;
@@ -22,16 +24,16 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(
+    public ResponseEntity<ApiResponse<LoginResponse>> login(
             @Valid @RequestBody LoginRequest request) {
 
         return ResponseEntity.ok(
-                authService.login(request)
+                ApiResponseUtil.success(authService.login(request), "Đăng nhập thành công")
         );
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<RefreshTokenResponse> refresh(
+    public ResponseEntity<ApiResponse<RefreshTokenResponse>> refresh(
             @Valid @RequestBody RefreshRequest request) {
 
         var newRefresh = refreshTokenService.verifyAndRotate(request.getRefreshToken());
@@ -39,16 +41,19 @@ public class AuthController {
         String email = newRefresh.getEmail();
         var access = authService.createAccessTokenForEmail(email);
 
-        return ResponseEntity.ok(new RefreshTokenResponse(
+        RefreshTokenResponse response = new RefreshTokenResponse(
                 access,
                 newRefresh.getToken(),
                 email
+        );
 
-        ));
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(response, "Làm mới token thành công")
+        );
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(
+    public ResponseEntity<ApiResponse<Void>> logout(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @Valid @RequestBody(required = false) RefreshRequest request) {
 
@@ -71,7 +76,8 @@ public class AuthController {
             refreshTokenService.revokeRefreshToken(request.getRefreshToken());
         }
 
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        return ResponseEntity.status(HttpStatus.NO_CONTENT)
+                .body(ApiResponseUtil.noContent());
     }
 
 }

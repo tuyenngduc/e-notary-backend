@@ -1,8 +1,11 @@
 package com.actvn.enotary.controller;
 
+import com.actvn.enotary.dto.response.ApiResponse;
+import com.actvn.enotary.dto.response.ApiResponseUtil;
 import com.actvn.enotary.dto.response.DocumentResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import com.actvn.enotary.repository.DocumentRepository;
@@ -33,18 +36,18 @@ public class DocumentController {
     private final NotaryRequestService notaryRequestService;
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<DocumentResponse> replaceDocument(
+    public ResponseEntity<ApiResponse<DocumentResponse>> replaceDocument(
             Authentication authentication,
             @PathVariable("id") UUID id,
             @RequestParam("file") MultipartFile file
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         Document updated = notaryRequestService.replaceDocument(id, userDetails.getUsername(), file);
-        return ResponseEntity.ok(DocumentResponse.fromEntity(updated));
+        return ResponseEntity.ok(ApiResponseUtil.success(DocumentResponse.fromEntity(updated), "Thay thế tài liệu thành công"));
     }
 
     @GetMapping("/{id}")
@@ -53,14 +56,14 @@ public class DocumentController {
             @PathVariable("id") UUID id
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String email = userDetails.getUsername();
 
         Document doc = documentRepository.findById(id)
-                .orElseThrow(() -> new AppException("Không tìm thấy tài liệu", org.springframework.http.HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new AppException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         NotaryRequest req = doc.getRequest();
         boolean isOwner = req.getClient() != null && req.getClient().getEmail().equals(email);
@@ -68,14 +71,14 @@ public class DocumentController {
         boolean isAdmin = userDetails.getRole() != null && userDetails.getRole().name().equals("ADMIN");
 
         if (!isOwner && !isAssignedNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         try {
             Path projectRoot = notaryRequestService.getProjectRootPublic();
             Path file = projectRoot.resolve(Path.of(doc.getFilePath())).normalize();
             if (!Files.exists(file)) {
-                throw new AppException("File not found on disk", org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+                throw new AppException(ErrorCode.DOCUMENT_NOT_FOUND);
             }
 
             String contentType = Files.probeContentType(file);
@@ -91,7 +94,7 @@ public class DocumentController {
         } catch (AppException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new AppException("Lỗi khi trả file", org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new AppException("Lỗi khi tải file tài liệu", org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }

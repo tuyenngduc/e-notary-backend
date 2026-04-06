@@ -13,7 +13,6 @@ import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
-import com.actvn.enotary.exception.ErrorCodes;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;

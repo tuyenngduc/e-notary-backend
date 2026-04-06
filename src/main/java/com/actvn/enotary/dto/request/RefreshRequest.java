@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 public class RefreshRequest {
-    @NotBlank
+    @NotBlank(message = "Refresh token không được để trống")
     private String refreshToken;
 }
 

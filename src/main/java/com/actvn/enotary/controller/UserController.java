@@ -1,6 +1,8 @@
 package com.actvn.enotary.controller;
 
 import com.actvn.enotary.dto.request.SignUpRequest;
+import com.actvn.enotary.dto.response.ApiResponse;
+import com.actvn.enotary.dto.response.ApiResponseUtil;
 import com.actvn.enotary.dto.response.UserResponse;
 import com.actvn.enotary.entity.User;
 import com.actvn.enotary.service.UserService;
@@ -21,12 +23,12 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
-    public ResponseEntity<UserResponse> registerClient(
+    public ResponseEntity<ApiResponse<UserResponse>> registerClient(
             @Valid @RequestBody SignUpRequest request) {
 
         User newUser = userService.registerClient(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(UserResponse.fromUser(newUser));
+                .body(ApiResponseUtil.created(UserResponse.fromUser(newUser), "Tạo người dùng thành công"));
     }
 }

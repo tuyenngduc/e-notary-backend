@@ -38,3 +38,5 @@ build/
 .env.properties
 application-local.properties
 application-local.yml
+uploads/
+frontend/

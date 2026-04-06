@@ -3,6 +3,8 @@ package com.actvn.enotary.controller;
 import com.actvn.enotary.dto.request.NotaryRequestCreateRequest;
 import com.actvn.enotary.dto.request.RejectNotaryRequestRequest;
 import com.actvn.enotary.dto.request.ScheduleAppointmentRequest;
+import com.actvn.enotary.dto.response.ApiResponse;
+import com.actvn.enotary.dto.response.ApiResponseUtil;
 import com.actvn.enotary.dto.response.AppointmentResponse;
 import com.actvn.enotary.dto.response.DocumentRequirementResponse;
 import com.actvn.enotary.dto.response.DocumentResponse;
@@ -11,6 +13,8 @@ import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.RequestStatus;
+import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
 import jakarta.validation.Valid;
@@ -37,12 +41,12 @@ public class NotaryRequestController {
     private final NotaryRequestService notaryRequestService;
 
     @PostMapping
-    public ResponseEntity<NotaryRequestResponse> createRequest(
+    public ResponseEntity<ApiResponse<NotaryRequestResponse>> createRequest(
             Authentication authentication,
             @Valid @RequestBody NotaryRequestCreateRequest request) {
 
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -51,16 +55,18 @@ public class NotaryRequestController {
         NotaryRequest created = notaryRequestService.createRequest(email, request);
         DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(created.getRequestId());
         URI location = URI.create("/api/requests/" + created.getRequestId());
-        return ResponseEntity.created(location).body(NotaryRequestResponse.fromEntity(created, documentRequirements));
+        return ResponseEntity.created(location).body(
+                ApiResponseUtil.created(NotaryRequestResponse.fromEntity(created, documentRequirements), "Tạo yêu cầu công chứng thành công")
+        );
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<NotaryRequestResponse> getRequest(
+    public ResponseEntity<ApiResponse<NotaryRequestResponse>> getRequest(
             Authentication authentication,
             @PathVariable("id") UUID id) {
 
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -75,19 +81,19 @@ public class NotaryRequestController {
         boolean isAdmin = user.getRole().name().equals("ADMIN");
 
         if (!isOwner && !isAssignedNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(id);
-        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(r, documentRequirements));
+        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(r, documentRequirements)));
     }
 
     @GetMapping("/{id}/document-requirements")
-    public ResponseEntity<DocumentRequirementResponse> getDocumentRequirements(
+    public ResponseEntity<ApiResponse<DocumentRequirementResponse>> getDocumentRequirements(
             Authentication authentication,
             @PathVariable("id") UUID id) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -100,16 +106,16 @@ public class NotaryRequestController {
         boolean isAdmin = userDetails.getRole().name().equals("ADMIN");
 
         if (!isOwner && !isAssignedNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
-        return ResponseEntity.ok(notaryRequestService.getDocumentRequirements(id));
+        return ResponseEntity.ok(ApiResponseUtil.success(notaryRequestService.getDocumentRequirements(id)));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<List<NotaryRequestResponse>> listMyRequests(Authentication authentication) {
+    public ResponseEntity<ApiResponse<List<NotaryRequestResponse>>> listMyRequests(Authentication authentication) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -117,18 +123,46 @@ public class NotaryRequestController {
 
         List<NotaryRequest> list = notaryRequestService.listForClient(userId);
         List<NotaryRequestResponse> resp = list.stream().map(NotaryRequestResponse::fromEntity).collect(Collectors.toList());
-        return ResponseEntity.ok(resp);
+        return ResponseEntity.ok(ApiResponseUtil.success(resp));
+    }
+
+    @GetMapping("/{id}/documents")
+    public ResponseEntity<ApiResponse<List<DocumentResponse>>> getRequestDocuments(
+            Authentication authentication,
+            @PathVariable("id") UUID id) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        String email = userDetails.getUsername();
+
+        NotaryRequest r = notaryRequestService.getById(id);
+
+        boolean isOwner = r.getClient() != null && r.getClient().getEmail().equals(email);
+        boolean isAssignedNotary = r.getNotary() != null && r.getNotary().getEmail().equals(email);
+        boolean isAdmin = userDetails.getRole().name().equals("ADMIN");
+
+        if (!isOwner && !isAssignedNotary && !isAdmin) {
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
+        }
+
+        List<DocumentResponse> documents = notaryRequestService.getDocumentsByRequestId(id)
+                .stream()
+                .map(DocumentResponse::fromEntity)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponseUtil.success(documents));
     }
 
     @PostMapping(value = "/{id}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<DocumentResponse> uploadDocument(
+    public ResponseEntity<ApiResponse<DocumentResponse>> uploadDocument(
             Authentication authentication,
             @PathVariable("id") UUID id,
             @RequestParam("file") MultipartFile file,
             @RequestParam("docType") DocType docType
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -146,31 +180,33 @@ public class NotaryRequestController {
             }
         } catch (Exception ignored) {
         }
-        return ResponseEntity.created(location).body(resp);
+        return ResponseEntity.created(location).body(
+                ApiResponseUtil.created(resp, "Tải lên tài liệu thành công")
+        );
     }
 
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<NotaryRequestResponse> cancelRequest(
+    public ResponseEntity<ApiResponse<NotaryRequestResponse>> cancelRequest(
             Authentication authentication,
             @PathVariable("id") UUID id) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String email = userDetails.getUsername();
 
         NotaryRequest updated = notaryRequestService.cancelRequest(id, email);
-        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
+        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Hủy yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/reject")
-    public ResponseEntity<NotaryRequestResponse> rejectRequest(
+    public ResponseEntity<ApiResponse<NotaryRequestResponse>> rejectRequest(
             Authentication authentication,
             @PathVariable("id") UUID id,
             @Valid @RequestBody RejectNotaryRequestRequest request) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -178,63 +214,65 @@ public class NotaryRequestController {
         boolean isNotary = "NOTARY".equals(role);
         boolean isAdmin = "ADMIN".equals(role);
         if (!isNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         NotaryRequest updated = notaryRequestService.rejectRequest(id, userDetails.getUsername(), request.getReason());
-        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
+        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Từ chối yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/accept")
-    public ResponseEntity<NotaryRequestResponse> acceptRequest(
+    public ResponseEntity<ApiResponse<NotaryRequestResponse>> acceptRequest(
             Authentication authentication,
             @PathVariable("id") UUID id) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
         boolean isNotary = "NOTARY".equals(role);
         if (!isNotary) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         NotaryRequest updated = notaryRequestService.acceptRequest(id, userDetails.getUsername());
-        return ResponseEntity.ok(NotaryRequestResponse.fromEntity(updated));
+        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Tiếp nhận yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/schedule")
-    public ResponseEntity<AppointmentResponse> scheduleAppointment(
+    public ResponseEntity<ApiResponse<AppointmentResponse>> scheduleAppointment(
             Authentication authentication,
             @PathVariable("id") UUID id,
             @Valid @RequestBody ScheduleAppointmentRequest request) {
 
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
         boolean isNotary = "NOTARY".equals(role);
         boolean isAdmin = "ADMIN".equals(role);
         if (!isNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         AppointmentResponse response = notaryRequestService.scheduleAppointment(id, userDetails.getUsername(), request);
         URI location = URI.create("/api/appointments/" + response.getAppointmentId());
-        return ResponseEntity.created(location).body(response);
+        return ResponseEntity.created(location).body(
+                ApiResponseUtil.created(response, "Lên lịch cuộc hẹn thành công")
+        );
     }
 
     @GetMapping("/filter")
-    public ResponseEntity<Page<NotaryRequestResponse>> filterRequestsForNotary(
+    public ResponseEntity<ApiResponse<Page<NotaryRequestResponse>>> filterRequestsForNotary(
             Authentication authentication,
             @RequestParam(value = "status", required = false) RequestStatus status,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -243,35 +281,35 @@ public class NotaryRequestController {
         boolean isNotary = "NOTARY".equals(role);
         boolean isAdmin = "ADMIN".equals(role);
         if (!isNotary && !isAdmin) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         UUID notaryUserId = userDetails.getId();
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
         Page<NotaryRequest> pageResult = notaryRequestService.listForNotaryByStatus(notaryUserId, status, pr);
         Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
-        return ResponseEntity.ok(resp);
+        return ResponseEntity.ok(ApiResponseUtil.success(resp));
     }
 
     @GetMapping("/me/accepted")
-    public ResponseEntity<Page<NotaryRequestResponse>> listAcceptedRequestsForCurrentNotary(
+    public ResponseEntity<ApiResponse<Page<NotaryRequestResponse>>> listAcceptedRequestsForCurrentNotary(
             Authentication authentication,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            return ResponseEntity.status(401).build();
+            throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
 
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String role = userDetails.getRole() != null ? userDetails.getRole().name() : "";
         if (!"NOTARY".equals(role)) {
-            return ResponseEntity.status(403).build();
+            throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
         Page<NotaryRequest> pageResult = notaryRequestService.listAcceptedByNotary(userDetails.getId(), pr);
         Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
-        return ResponseEntity.ok(resp);
+        return ResponseEntity.ok(ApiResponseUtil.success(resp));
     }
 }

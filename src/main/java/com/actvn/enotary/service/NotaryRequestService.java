@@ -15,7 +15,7 @@ import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.VideoSessionStatus;
 import com.actvn.enotary.exception.AppException;
-import com.actvn.enotary.exception.ErrorCodes;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -119,9 +119,7 @@ public class NotaryRequestService {
         if (!documentRequirements.isReadyForAccept()) {
             String missing = documentRequirements.getMissingDocTypes().stream().map(Enum::name).collect(java.util.stream.Collectors.joining(", "));
             throw new AppException(
-                    "Hồ sơ chưa đủ để tiếp nhận. Thiếu: " + missing,
-                    HttpStatus.BAD_REQUEST,
-                    ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS,
+                    ErrorCode.REQUEST_MISSING_REQUIRED_DOCUMENTS,
                     Map.of("missingDocTypes", documentRequirements.getMissingDocTypes().stream().map(Enum::name).toList())
             );
         }
@@ -212,6 +210,10 @@ public class NotaryRequestService {
         return findProjectRoot();
     }
 
+    public List<Document> getDocumentsByRequestId(UUID requestId) {
+        return documentRepository.findByRequest_RequestId(requestId);
+    }
+
     @Transactional
     public Document uploadDocument(UUID requestId, String uploaderEmail, MultipartFile file, DocType docType) {
         NotaryRequest request = getById(requestId);
@@ -244,7 +246,7 @@ public class NotaryRequestService {
     @Transactional
     public Document replaceDocument(UUID documentId, String uploaderEmail, MultipartFile file) {
         Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new AppException("Không tìm thấy tài liệu", HttpStatus.NOT_FOUND, ErrorCodes.DOCUMENT_NOT_FOUND));
+                .orElseThrow(() -> new AppException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         NotaryRequest request = doc.getRequest();
         User uploader = userRepository.findByEmail(uploaderEmail)
@@ -313,9 +315,7 @@ public class NotaryRequestService {
                 || request.getStatus() == RequestStatus.CANCELLED
                 || request.getStatus() == RequestStatus.COMPLETED) {
             throw new AppException(
-                    "Không thể upload/cập nhật tài liệu khi yêu cầu đã kết thúc",
-                    HttpStatus.CONFLICT,
-                    ErrorCodes.REQUEST_TERMINAL_STATUS,
+                    ErrorCode.REQUEST_TERMINAL_STATUS,
                     Map.of("status", request.getStatus().name())
             );
         }
@@ -332,9 +332,7 @@ public class NotaryRequestService {
 
         if (!replaceableTypes.contains(type)) {
             throw new AppException(
-                    "Loại tài liệu này không được phép thay thế",
-                    HttpStatus.BAD_REQUEST,
-                    ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                    ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED,
                     Map.of("docType", type.name())
             );
         }
@@ -343,9 +341,7 @@ public class NotaryRequestService {
             List<DocType> requestDocTypes = documentRepository.findDocTypesByRequestId(doc.getRequest().getRequestId());
             if (requestDocTypes.contains(DocType.SIGNED_DOCUMENT)) {
                 throw new AppException(
-                        "Không thể thay thế SESSION_VIDEO sau khi đã tạo biên bản/ký số",
-                        HttpStatus.CONFLICT,
-                        ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                        ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED,
                         Map.of("docType", type.name(), "reason", "SIGNED_DOCUMENT_EXISTS")
                 );
             }
@@ -494,10 +490,6 @@ public class NotaryRequestService {
     }
 
     private AppException alreadyAssignedException() {
-        return new AppException(
-                "Yêu cầu đã được công chứng viên khác tiếp nhận",
-                HttpStatus.CONFLICT,
-                ErrorCodes.REQUEST_ALREADY_ASSIGNED
-        );
+        return new AppException(ErrorCode.REQUEST_ALREADY_ASSIGNED);
     }
 }

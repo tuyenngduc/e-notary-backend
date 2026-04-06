@@ -14,5 +14,8 @@ import java.util.UUID;
 public interface DocumentRepository extends JpaRepository<Document, UUID> {
 	@Query("select distinct d.docType from Document d where d.request.requestId = :requestId")
 	List<DocType> findDocTypesByRequestId(@Param("requestId") UUID requestId);
+
+	@Query("select d from Document d where d.request.requestId = :requestId order by d.createdAt desc")
+	List<Document> findByRequest_RequestId(@Param("requestId") UUID requestId);
 }
 

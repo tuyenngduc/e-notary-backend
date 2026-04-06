@@ -3,6 +3,7 @@ package com.actvn.enotary.service;
 import com.actvn.enotary.dto.request.LoginRequest;
 import com.actvn.enotary.dto.response.LoginResponse;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.security.CustomUserDetailsService;
 import com.actvn.enotary.security.JwtUtil;
@@ -43,17 +44,15 @@ public class AuthService {
                             )
                     );
         } catch (BadCredentialsException | UsernameNotFoundException ex) {
-
-            throw new AppException("Invalid email or password.", HttpStatus.UNAUTHORIZED);
+            throw new AppException(ErrorCode.AUTHENTICATION_FAILED);
         } catch (DisabledException ex) {
-            throw new AppException("Account is disabled. Contact support.", HttpStatus.FORBIDDEN);
+            throw new AppException("Tài khoản bị vô hiệu hóa. Vui lòng liên hệ hỗ trợ.", HttpStatus.FORBIDDEN);
         } catch (LockedException ex) {
-            throw new AppException("Account is locked. Try again later or contact support.", HttpStatus.LOCKED);
+            throw new AppException("Tài khoản bị khóa. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.", HttpStatus.LOCKED);
         } catch (CredentialsExpiredException ex) {
-            throw new AppException("Credentials expired. Reset your password.", HttpStatus.UNAUTHORIZED);
+            throw new AppException("Mật khẩu đã hết hạn. Vui lòng đặt lại mật khẩu.", HttpStatus.UNAUTHORIZED);
         } catch (AuthenticationException ex) {
-
-            throw new AppException("Authentication failed.", HttpStatus.UNAUTHORIZED);
+            throw new AppException(ErrorCode.AUTHENTICATION_FAILED);
         }
 
         var userDetails = (CustomUserDetails) authentication.getPrincipal();
