@@ -15,6 +15,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -52,7 +53,7 @@ public class SecurityConfig {
             throws Exception {
 
         http.cors(withDefaults())
-                .csrf(csrf -> csrf.disable())
+                .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sess ->
                         sess.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS))
@@ -62,7 +63,7 @@ public class SecurityConfig {
                                         response,
                                         request,
                                         HttpStatus.UNAUTHORIZED,
-                                        ErrorCode.AUTHENTICATION_FAILED.getMessage()
+                                        ErrorCode.INVALID_AUTHENTICATION.getMessage()
                                 ))
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeSecurityError(
@@ -77,7 +78,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/video/verify-token").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/video/room/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/requests").hasRole("CLIENT")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/profile/**").hasRole("CLIENT")
                         .anyRequest().authenticated()
                 )
@@ -96,12 +99,10 @@ public class SecurityConfig {
                 .toList();
 
         configuration.setAllowedOrigins(allowedOrigins);
-        configuration.setAllowedMethods(Arrays.asList(
+        configuration.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
         ));
-        configuration.setAllowedHeaders(Arrays.asList(
-                "*"
-        ));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(Arrays.asList(
                 "Authorization",
                 "Content-Type",

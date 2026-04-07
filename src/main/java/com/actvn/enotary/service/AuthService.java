@@ -7,6 +7,7 @@ import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.security.CustomUserDetailsService;
 import com.actvn.enotary.security.JwtUtil;
+import com.actvn.enotary.enums.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;

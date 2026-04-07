@@ -4,6 +4,8 @@ import { API_BASE_URL } from './config';
 import { clearAuthSession, getAuthSession, setAuthSession } from './authStorage';
 import type { AuthSession, RefreshResponse } from '../types/auth';
 
+export const AUTH_SESSION_CLEARED_EVENT = 'enotary-auth-cleared';
+
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
@@ -90,11 +92,10 @@ api.interceptors.response.use(
       }
 
       clearAuthSession();
+      window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
     }
 
     return Promise.reject(error);
   },
 );
-
-export const apiClient = api;
 

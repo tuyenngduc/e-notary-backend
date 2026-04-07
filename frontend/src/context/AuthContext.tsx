@@ -1,8 +1,9 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { clearAuthSession, getAuthSession, setAuthSession } from '../lib/authStorage';
 import { loginApi } from '../features/auth/authApi';
 import type { AuthSession, LoginRequest, SignUpRequest } from '../types/auth';
 import { registerApi } from '../features/auth/authApi';
+import { AUTH_SESSION_CLEARED_EVENT } from '../lib/http';
 
 interface AuthContextValue {
   session: AuthSession | null;
@@ -16,6 +17,15 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => getAuthSession());
+
+  useEffect(() => {
+    const handleAuthCleared = () => {
+      setSession(null);
+    };
+
+    window.addEventListener(AUTH_SESSION_CLEARED_EVENT, handleAuthCleared);
+    return () => window.removeEventListener(AUTH_SESSION_CLEARED_EVENT, handleAuthCleared);
+  }, []);
 
   const normalizeRole = (role?: string) => {
     if (!role) return 'CLIENT';

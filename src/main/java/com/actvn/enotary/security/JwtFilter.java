@@ -53,6 +53,7 @@ public class JwtFilter extends OncePerRequestFilter {
                 // load full user details so principal is CustomUserDetails (not just email)
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
 
+
                 var authToken =
                         new UsernamePasswordAuthenticationToken(
                                 userDetails,
