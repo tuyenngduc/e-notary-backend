@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { toApiErrorMessage } from '../../../lib/apiError';
@@ -11,7 +11,9 @@ import { AuthLayout } from '../components/AuthLayout';
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [submitError, setSubmitError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -30,7 +32,8 @@ export function LoginPage() {
     setSubmitError('');
     try {
       const nextSession = await login(data);
-      navigate(getDefaultRouteByRole(nextSession.role));
+      const redirectPath = (location.state as { from?: string } | null)?.from;
+      navigate(redirectPath || getDefaultRouteByRole(nextSession.role));
     } catch (error) {
       setSubmitError(toApiErrorMessage(error, 'Đăng nhập thất bại'));
     }
@@ -58,7 +61,21 @@ export function LoginPage() {
 
         <label className="field">
           <span>Mật khẩu</span>
-          <input type="password" placeholder="Nhập mật khẩu của bạn" {...register('password')} />
+          <div className="password-field">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Nhập mật khẩu của bạn"
+              {...register('password')}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
           {errors.password && <small>{errors.password.message}</small>}
         </label>
 

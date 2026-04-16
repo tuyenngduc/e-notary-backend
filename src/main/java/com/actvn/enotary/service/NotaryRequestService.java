@@ -52,7 +52,6 @@ public class NotaryRequestService {
     private final DocumentRepository documentRepository;
     private final AppointmentRepository appointmentRepository;
     private final VideoSessionRepository videoSessionRepository;
-    private final AppointmentEmailService appointmentEmailService;
 
     @Value("${app.meeting.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -104,15 +103,15 @@ public class NotaryRequestService {
             throw alreadyAssignedException();
         }
 
-        // Idempotent: same notary can call accept again after request already moved to PROCESSING.
-        if (request.getStatus() == RequestStatus.PROCESSING
+        // Idempotent: same notary can call accept again after request already moved to ACCEPTED.
+        if (request.getStatus() == RequestStatus.ACCEPTED
                 && request.getNotary() != null
                 && request.getNotary().getUserId().equals(notary.getUserId())) {
             return request;
         }
 
-        if (request.getStatus() != RequestStatus.NEW) {
-            throw new AppException("Yêu cầu không ở trạng thái NEW để tiếp nhận", HttpStatus.BAD_REQUEST);
+        if (request.getStatus() != RequestStatus.NEW && request.getStatus() != RequestStatus.PROCESSING) {
+            throw new AppException("Yêu cầu không ở trạng thái chờ tiếp nhận", HttpStatus.BAD_REQUEST);
         }
 
         DocumentRequirementResponse documentRequirements = buildDocumentRequirements(request);
@@ -125,7 +124,7 @@ public class NotaryRequestService {
         }
 
         request.setNotary(notary);
-        request.setStatus(RequestStatus.PROCESSING);
+        request.setStatus(RequestStatus.ACCEPTED);
         request.setUpdatedAt(OffsetDateTime.now());
         return notaryRequestRepository.save(request);
     }
@@ -175,13 +174,19 @@ public class NotaryRequestService {
         return notaryRequestRepository.findByClientUserId(userId);
     }
 
-    // When status is null return NEW + requests assigned to this notary.
+    public String getMeetingUrlByRequestId(UUID requestId) {
+        return appointmentRepository.findByRequestRequestId(requestId)
+                .map(Appointment::getMeetingUrl)
+                .orElse(null);
+    }
+
+    // When status is null return requests waiting for acceptance (PROCESSING, unassigned).
     public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, Pageable pageable) {
         if (status == null) {
-            return notaryRequestRepository.findByStatusOrNotaryUserId(RequestStatus.NEW, notaryUserId, pageable);
+            return notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageable);
         }
-        if (status == RequestStatus.NEW) {
-            return notaryRequestRepository.findByStatus(status, pageable);
+        if (status == RequestStatus.PROCESSING) {
+            return notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageable);
         }
         return notaryRequestRepository.findByNotaryUserIdAndStatus(notaryUserId, status, pageable);
     }
@@ -240,7 +245,9 @@ public class NotaryRequestService {
         doc.setFileHash(stored.hash());
         doc.setCreatedAt(OffsetDateTime.now());
 
-        return documentRepository.save(doc);
+        Document saved = documentRepository.save(doc);
+        syncRequestStatusAfterRequiredDocumentsCompleted(request);
+        return saved;
     }
 
     @Transactional
@@ -267,7 +274,24 @@ public class NotaryRequestService {
         doc.setFilePath(stored.relativePath());
         doc.setFileHash(stored.hash());
         doc.setUpdatedAt(OffsetDateTime.now());
-        return documentRepository.save(doc);
+        Document saved = documentRepository.save(doc);
+        syncRequestStatusAfterRequiredDocumentsCompleted(request);
+        return saved;
+    }
+
+    private void syncRequestStatusAfterRequiredDocumentsCompleted(NotaryRequest request) {
+        if (request.getStatus() != RequestStatus.NEW) {
+            return;
+        }
+
+        DocumentRequirementResponse documentRequirements = buildDocumentRequirements(request);
+        if (!documentRequirements.isReadyForAccept()) {
+            return;
+        }
+
+        request.setStatus(RequestStatus.PROCESSING);
+        request.setUpdatedAt(OffsetDateTime.now());
+        notaryRequestRepository.save(request);
     }
 
     private StoredFileResult storeFile(MultipartFile file) {
@@ -395,9 +419,9 @@ public class NotaryRequestService {
             throw new AppException("Không có quyền lên lịch cho yêu cầu này", HttpStatus.FORBIDDEN);
         }
 
-        if (request.getStatus() != RequestStatus.PROCESSING) {
+        if (request.getStatus() != RequestStatus.ACCEPTED) {
             throw new AppException(
-                    "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái PROCESSING (hiện tại: " + request.getStatus() + ")",
+                    "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái ACCEPTED (hiện tại: " + request.getStatus() + ")",
                     HttpStatus.BAD_REQUEST);
         }
 
@@ -445,15 +469,11 @@ public class NotaryRequestService {
             appointmentRepository.save(saved);
         }
 
-        request.setStatus(RequestStatus.SCHEDULED);
-        request.setUpdatedAt(OffsetDateTime.now());
-        notaryRequestRepository.save(request);
+         request.setStatus(RequestStatus.SCHEDULED);
+         request.setUpdatedAt(OffsetDateTime.now());
+         notaryRequestRepository.save(request);
 
-        if (request.getServiceType() == ServiceType.ONLINE) {
-            appointmentEmailService.sendOnlineMeetingLinkToClient(request, saved);
-        }
-
-        return AppointmentResponse.fromEntity(saved);
+         return AppointmentResponse.fromEntity(saved);
     }
 
     @Transactional

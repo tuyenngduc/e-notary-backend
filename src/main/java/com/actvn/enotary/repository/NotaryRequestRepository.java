@@ -21,6 +21,8 @@ public interface NotaryRequestRepository extends JpaRepository<NotaryRequest, UU
 
     Page<NotaryRequest> findByStatus(RequestStatus status, Pageable pageable);
 
+    Page<NotaryRequest> findByStatusAndNotaryIsNull(RequestStatus status, Pageable pageable);
+
     Page<NotaryRequest> findByStatusOrNotaryUserId(RequestStatus status, UUID notaryUserId, Pageable pageable);
 
     Page<NotaryRequest> findByNotaryUserIdAndStatus(UUID notaryUserId, RequestStatus status, Pageable pageable);

@@ -40,6 +40,28 @@ public class NotaryRequestController {
 
     private final NotaryRequestService notaryRequestService;
 
+    private NotaryRequestResponse toResponse(NotaryRequest request) {
+        String meetingUrl = notaryRequestService.getMeetingUrlByRequestId(request.getRequestId());
+        return NotaryRequestResponse.fromEntity(request, null, meetingUrl);
+    }
+
+    private NotaryRequestResponse toResponse(NotaryRequest request, DocumentRequirementResponse requirements) {
+        String meetingUrl = notaryRequestService.getMeetingUrlByRequestId(request.getRequestId());
+        return NotaryRequestResponse.fromEntity(request, requirements, meetingUrl);
+    }
+
+    private boolean canAccessRequestForRead(CustomUserDetails userDetails, String email, NotaryRequest request) {
+        boolean isOwner = request.getClient() != null && request.getClient().getEmail().equals(email);
+        boolean isAssignedNotary = request.getNotary() != null && request.getNotary().getEmail().equals(email);
+        boolean isAdmin = userDetails.getRole() != null && "ADMIN".equals(userDetails.getRole().name());
+        boolean isNotary = userDetails.getRole() != null && "NOTARY".equals(userDetails.getRole().name());
+
+        // Notary can inspect PROCESSING requests before accepting; other statuses require assignment.
+        boolean canInspectProcessingRequest = isNotary && request.getStatus() == RequestStatus.PROCESSING;
+
+        return isOwner || isAssignedNotary || isAdmin || canInspectProcessingRequest;
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<NotaryRequestResponse>> createRequest(
             Authentication authentication,
@@ -56,7 +78,7 @@ public class NotaryRequestController {
         DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(created.getRequestId());
         URI location = URI.create("/api/requests/" + created.getRequestId());
         return ResponseEntity.created(location).body(
-                ApiResponseUtil.created(NotaryRequestResponse.fromEntity(created, documentRequirements), "Tạo yêu cầu công chứng thành công")
+                ApiResponseUtil.created(toResponse(created, documentRequirements), "Tạo yêu cầu công chứng thành công")
         );
     }
 
@@ -74,18 +96,12 @@ public class NotaryRequestController {
 
         NotaryRequest r = notaryRequestService.getById(id);
 
-        // authorize: allow if user is client owner, or assigned notary, or admin
-        var user = userDetails;
-        boolean isOwner = r.getClient() != null && r.getClient().getEmail().equals(email);
-        boolean isAssignedNotary = r.getNotary() != null && r.getNotary().getEmail().equals(email);
-        boolean isAdmin = user.getRole().name().equals("ADMIN");
-
-        if (!isOwner && !isAssignedNotary && !isAdmin) {
+        if (!canAccessRequestForRead(userDetails, email, r)) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
         DocumentRequirementResponse documentRequirements = notaryRequestService.getDocumentRequirements(id);
-        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(r, documentRequirements)));
+        return ResponseEntity.ok(ApiResponseUtil.success(toResponse(r, documentRequirements)));
     }
 
     @GetMapping("/{id}/document-requirements")
@@ -101,11 +117,7 @@ public class NotaryRequestController {
 
         NotaryRequest r = notaryRequestService.getById(id);
 
-        boolean isOwner = r.getClient() != null && r.getClient().getEmail().equals(email);
-        boolean isAssignedNotary = r.getNotary() != null && r.getNotary().getEmail().equals(email);
-        boolean isAdmin = userDetails.getRole().name().equals("ADMIN");
-
-        if (!isOwner && !isAssignedNotary && !isAdmin) {
+        if (!canAccessRequestForRead(userDetails, email, r)) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
@@ -122,7 +134,7 @@ public class NotaryRequestController {
         UUID userId = userDetails.getId();
 
         List<NotaryRequest> list = notaryRequestService.listForClient(userId);
-        List<NotaryRequestResponse> resp = list.stream().map(NotaryRequestResponse::fromEntity).collect(Collectors.toList());
+        List<NotaryRequestResponse> resp = list.stream().map(this::toResponse).collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponseUtil.success(resp));
     }
 
@@ -139,11 +151,7 @@ public class NotaryRequestController {
 
         NotaryRequest r = notaryRequestService.getById(id);
 
-        boolean isOwner = r.getClient() != null && r.getClient().getEmail().equals(email);
-        boolean isAssignedNotary = r.getNotary() != null && r.getNotary().getEmail().equals(email);
-        boolean isAdmin = userDetails.getRole().name().equals("ADMIN");
-
-        if (!isOwner && !isAssignedNotary && !isAdmin) {
+        if (!canAccessRequestForRead(userDetails, email, r)) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
@@ -197,7 +205,7 @@ public class NotaryRequestController {
         String email = userDetails.getUsername();
 
         NotaryRequest updated = notaryRequestService.cancelRequest(id, email);
-        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Hủy yêu cầu thành công"));
+        return ResponseEntity.ok(ApiResponseUtil.success(toResponse(updated), "Hủy yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/reject")
@@ -218,7 +226,7 @@ public class NotaryRequestController {
         }
 
         NotaryRequest updated = notaryRequestService.rejectRequest(id, userDetails.getUsername(), request.getReason());
-        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Từ chối yêu cầu thành công"));
+        return ResponseEntity.ok(ApiResponseUtil.success(toResponse(updated), "Từ chối yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/accept")
@@ -237,7 +245,7 @@ public class NotaryRequestController {
         }
 
         NotaryRequest updated = notaryRequestService.acceptRequest(id, userDetails.getUsername());
-        return ResponseEntity.ok(ApiResponseUtil.success(NotaryRequestResponse.fromEntity(updated), "Tiếp nhận yêu cầu thành công"));
+        return ResponseEntity.ok(ApiResponseUtil.success(toResponse(updated), "Tiếp nhận yêu cầu thành công"));
     }
 
     @PostMapping("/{id}/schedule")
@@ -287,7 +295,7 @@ public class NotaryRequestController {
         UUID notaryUserId = userDetails.getId();
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
         Page<NotaryRequest> pageResult = notaryRequestService.listForNotaryByStatus(notaryUserId, status, pr);
-        Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
+        Page<NotaryRequestResponse> resp = pageResult.map(this::toResponse);
         return ResponseEntity.ok(ApiResponseUtil.success(resp));
     }
 
@@ -309,7 +317,7 @@ public class NotaryRequestController {
 
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.max(1, size));
         Page<NotaryRequest> pageResult = notaryRequestService.listAcceptedByNotary(userDetails.getId(), pr);
-        Page<NotaryRequestResponse> resp = pageResult.map(NotaryRequestResponse::fromEntity);
+        Page<NotaryRequestResponse> resp = pageResult.map(this::toResponse);
         return ResponseEntity.ok(ApiResponseUtil.success(resp));
     }
 }

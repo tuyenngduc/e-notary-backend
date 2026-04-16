@@ -13,6 +13,7 @@ import com.actvn.enotary.enums.Role;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.exception.AppException;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -54,25 +55,21 @@ class NotaryRequestServiceTest {
     @Mock
     AppointmentRepository appointmentRepository;
 
-    @Mock
-    VideoSessionRepository videoSessionRepository;
+     @Mock
+     VideoSessionRepository videoSessionRepository;
 
-    @Mock
-    AppointmentEmailService appointmentEmailService;
+     NotaryRequestService service;
 
-    NotaryRequestService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new NotaryRequestService(
-                notaryRequestRepository,
-                userRepository,
-                documentRepository,
-                appointmentRepository,
-                videoSessionRepository,
-                appointmentEmailService
-        );
-    }
+     @BeforeEach
+     void setUp() {
+         service = new NotaryRequestService(
+                 notaryRequestRepository,
+                 userRepository,
+                 documentRepository,
+                 appointmentRepository,
+                 videoSessionRepository
+         );
+     }
 
     @Test
     void acceptRequest_notaryAcceptsWhenRequiredDocumentsArePresent() {
@@ -97,7 +94,7 @@ class NotaryRequestServiceTest {
 
         NotaryRequest out = service.acceptRequest(rid, "notary@example.com");
 
-        assertEquals(RequestStatus.PROCESSING, out.getStatus());
+        assertEquals(RequestStatus.ACCEPTED, out.getStatus());
         assertEquals(notary.getUserId(), out.getNotary().getUserId());
     }
 
@@ -131,7 +128,7 @@ class NotaryRequestServiceTest {
 
         NotaryRequest request = new NotaryRequest();
         request.setRequestId(rid);
-        request.setStatus(RequestStatus.PROCESSING);
+        request.setStatus(RequestStatus.ACCEPTED);
         request.setNotary(currentNotary);
 
         User newNotary = new User();
@@ -147,35 +144,35 @@ class NotaryRequestServiceTest {
     }
 
     @Test
-    void listForNotaryByStatus_whenStatusNull_returnsNewOrAssigned() {
+    void listForNotaryByStatus_whenStatusNull_returnsProcessingWithoutNotary() {
         UUID notaryId = UUID.randomUUID();
         var pageRequest = PageRequest.of(0, 10);
         var page = new PageImpl<NotaryRequest>(List.of());
 
-        when(notaryRequestRepository.findByStatusOrNotaryUserId(RequestStatus.NEW, notaryId, pageRequest)).thenReturn(page);
+        when(notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageRequest)).thenReturn(page);
 
         var result = service.listForNotaryByStatus(notaryId, null, pageRequest);
 
         assertSame(page, result);
-        verify(notaryRequestRepository).findByStatusOrNotaryUserId(RequestStatus.NEW, notaryId, pageRequest);
+        verify(notaryRequestRepository).findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageRequest);
         verify(notaryRequestRepository, never()).findByStatus(any(), any());
         verify(notaryRequestRepository, never()).findByNotaryUserIdAndStatus(any(), any(), any());
     }
 
     @Test
-    void listForNotaryByStatus_whenStatusNew_returnsGlobalNewRequests() {
+    void listForNotaryByStatus_whenStatusNew_returnsAssignedRequestsWithStatus() {
         UUID notaryId = UUID.randomUUID();
         var pageRequest = PageRequest.of(0, 10);
         var page = new PageImpl<NotaryRequest>(List.of());
 
-        when(notaryRequestRepository.findByStatus(RequestStatus.NEW, pageRequest)).thenReturn(page);
+        when(notaryRequestRepository.findByNotaryUserIdAndStatus(notaryId, RequestStatus.NEW, pageRequest)).thenReturn(page);
 
         var result = service.listForNotaryByStatus(notaryId, RequestStatus.NEW, pageRequest);
 
         assertSame(page, result);
-        verify(notaryRequestRepository).findByStatus(RequestStatus.NEW, pageRequest);
-        verify(notaryRequestRepository, never()).findByStatusOrNotaryUserId(any(), any(), any());
-        verify(notaryRequestRepository, never()).findByNotaryUserIdAndStatus(any(), any(), any());
+        verify(notaryRequestRepository).findByNotaryUserIdAndStatus(notaryId, RequestStatus.NEW, pageRequest);
+        verify(notaryRequestRepository, never()).findByStatus(any(), any());
+        verify(notaryRequestRepository, never()).findByStatusAndNotaryIsNull(any(), any());
     }
 
     @Test
@@ -234,7 +231,7 @@ class NotaryRequestServiceTest {
                 () -> service.uploadDocument(requestId, "client@example.com", file, DocType.DRAFT_CONTRACT));
 
         assertEquals(409, ex.getStatus().value());
-        assertEquals(ErrorCodes.REQUEST_TERMINAL_STATUS, ex.getCode());
+        assertEquals(ErrorCode.REQUEST_TERMINAL_STATUS.name(), ex.getCode());
     }
 
     @Test
@@ -263,7 +260,7 @@ class NotaryRequestServiceTest {
                 () -> service.replaceDocument(documentId, "client@example.com", file));
 
         assertEquals(409, ex.getStatus().value());
-        assertEquals(ErrorCodes.REQUEST_TERMINAL_STATUS, ex.getCode());
+        assertEquals(ErrorCode.REQUEST_TERMINAL_STATUS.name(), ex.getCode());
     }
 
     @Test
@@ -278,7 +275,7 @@ class NotaryRequestServiceTest {
         NotaryRequest request = new NotaryRequest();
         request.setRequestId(UUID.randomUUID());
         request.setClient(owner);
-        request.setStatus(RequestStatus.PROCESSING);
+        request.setStatus(RequestStatus.ACCEPTED);
 
         Document document = new Document();
         document.setDocumentId(documentId);
@@ -293,7 +290,7 @@ class NotaryRequestServiceTest {
                 () -> service.replaceDocument(documentId, "client@example.com", file));
 
         assertEquals(400, ex.getStatus().value());
-        assertEquals(ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED, ex.getCode());
+        assertEquals(ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED.name(), ex.getCode());
     }
 
     @Test
@@ -325,8 +322,8 @@ class NotaryRequestServiceTest {
         AppException ex = assertThrows(AppException.class,
                 () -> service.replaceDocument(documentId, "client@example.com", file));
 
-        assertEquals(409, ex.getStatus().value());
-        assertEquals(ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED, ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        assertEquals(ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED.name(), ex.getCode());
     }
 
     @Test
@@ -440,7 +437,7 @@ class NotaryRequestServiceTest {
         NotaryRequest r = new NotaryRequest();
         r.setRequestId(rid);
         r.setNotary(notary);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         when(notaryRequestRepository.findById(rid)).thenReturn(Optional.of(r));
         when(userRepository.findByEmail("notary@example.com")).thenReturn(Optional.of(notary));
@@ -461,7 +458,7 @@ class NotaryRequestServiceTest {
         NotaryRequest r = new NotaryRequest();
         r.setRequestId(rid);
         r.setNotary(assignedNotary);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         User anotherNotary = new User();
         anotherNotary.setUserId(UUID.randomUUID());
@@ -490,7 +487,7 @@ class NotaryRequestServiceTest {
         r.setRequestId(rid);
         r.setNotary(notary);
         r.setServiceType(ServiceType.OFFLINE);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
         req.setScheduledTime(OffsetDateTime.now().plusDays(3));
@@ -506,15 +503,14 @@ class NotaryRequestServiceTest {
         });
         when(notaryRequestRepository.save(any(NotaryRequest.class))).thenAnswer(i -> i.getArgument(0));
 
-        AppointmentResponse resp = service.scheduleAppointment(rid, "notary@example.com", req);
+         AppointmentResponse resp = service.scheduleAppointment(rid, "notary@example.com", req);
 
-        assertEquals(AppointmentStatus.PENDING, resp.getStatus());
-        assertEquals("VP CN Số 5", resp.getPhysicalAddress());
-        assertNull(resp.getMeetingUrl());
-        assertEquals(ServiceType.OFFLINE, resp.getServiceType());
-        assertEquals(RequestStatus.SCHEDULED, r.getStatus());
-        verify(appointmentEmailService, never()).sendOnlineMeetingLinkToClient(any(), any());
-    }
+         assertEquals(AppointmentStatus.PENDING, resp.getStatus());
+         assertEquals("VP CN Số 5", resp.getPhysicalAddress());
+         assertNull(resp.getMeetingUrl());
+         assertEquals(ServiceType.OFFLINE, resp.getServiceType());
+         assertEquals(RequestStatus.SCHEDULED, r.getStatus());
+     }
 
     @Test
     void scheduleAppointment_assignedNotarySchedules_online_noAddress() {
@@ -530,7 +526,7 @@ class NotaryRequestServiceTest {
         r.setRequestId(rid);
         r.setNotary(notary);
         r.setServiceType(ServiceType.ONLINE);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
         req.setScheduledTime(OffsetDateTime.now().plusDays(2));
@@ -545,14 +541,13 @@ class NotaryRequestServiceTest {
         });
         when(notaryRequestRepository.save(any(NotaryRequest.class))).thenAnswer(i -> i.getArgument(0));
 
-        AppointmentResponse resp = service.scheduleAppointment(rid, "notary@example.com", req);
+         AppointmentResponse resp = service.scheduleAppointment(rid, "notary@example.com", req);
 
-        assertNull(resp.getPhysicalAddress());
-        assertNotNull(resp.getMeetingUrl());
-        assertTrue(resp.getMeetingUrl().contains("/api/video/room/"));
-        assertEquals(ServiceType.ONLINE, resp.getServiceType());
-        verify(appointmentEmailService).sendOnlineMeetingLinkToClient(eq(r), any());
-    }
+         assertNull(resp.getPhysicalAddress());
+         assertNotNull(resp.getMeetingUrl());
+         assertTrue(resp.getMeetingUrl().contains("/video/room/"));
+         assertEquals(ServiceType.ONLINE, resp.getServiceType());
+     }
 
     @Test
     void scheduleAppointment_wrongStatus_returns400() {
@@ -567,7 +562,7 @@ class NotaryRequestServiceTest {
         NotaryRequest r = new NotaryRequest();
         r.setRequestId(rid);
         r.setNotary(notary);
-        r.setStatus(RequestStatus.NEW); // not PROCESSING
+        r.setStatus(RequestStatus.NEW); // not ACCEPTED
 
         ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
         req.setScheduledTime(OffsetDateTime.now().plusDays(1));
@@ -593,7 +588,7 @@ class NotaryRequestServiceTest {
         NotaryRequest r = new NotaryRequest();
         r.setRequestId(rid);
         r.setNotary(notary);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         ScheduleAppointmentRequest req = new ScheduleAppointmentRequest();
         req.setScheduledTime(OffsetDateTime.now().plusDays(1));
@@ -617,7 +612,7 @@ class NotaryRequestServiceTest {
         NotaryRequest r = new NotaryRequest();
         r.setRequestId(rid);
         r.setNotary(assignedNotary);
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
 
         User anotherNotary = new User();
         anotherNotary.setUserId(UUID.randomUUID());

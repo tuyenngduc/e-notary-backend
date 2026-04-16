@@ -16,6 +16,7 @@ import java.util.UUID;
 public class VideoSessionResponse {
     private UUID sessionId;
     private UUID appointmentId;
+    private AppointmentResponse appointment;  // NEW: Include appointment object
     private String sessionToken;
     private String meetingUrl;
     private String roomId;
@@ -32,6 +33,7 @@ public class VideoSessionResponse {
         return VideoSessionResponse.builder()
                 .sessionId(session.getSessionId())
                 .appointmentId(session.getAppointment() != null ? session.getAppointment().getAppointmentId() : null)
+                .appointment(session.getAppointment() != null ? AppointmentResponse.fromEntity(session.getAppointment()) : null)  // NEW
                 .sessionToken(session.getSessionToken())
                 .meetingUrl(session.getMeetingUrl())
                 .roomId(session.getRoomId())
@@ -46,4 +48,6 @@ public class VideoSessionResponse {
                 .build();
     }
 }
+
+
 

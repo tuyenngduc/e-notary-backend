@@ -12,6 +12,8 @@ export function RegisterPage() {
   const { register: registerAccount } = useAuth();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -70,13 +72,41 @@ export function RegisterPage() {
 
         <label className="field">
           <span>Mật khẩu</span>
-          <input type="password" placeholder="Tối thiểu 6 ký tự" {...register('password')} />
+          <div className="password-field">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Tối thiểu 6 ký tự"
+              {...register('password')}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
           {errors.password && <small>{errors.password.message}</small>}
         </label>
 
         <label className="field">
           <span>Nhập lại mật khẩu</span>
-          <input type="password" placeholder="Xác nhận mật khẩu của bạn" {...register('confirmPassword')} />
+          <div className="password-field">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Xác nhận mật khẩu của bạn"
+              {...register('confirmPassword')}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              aria-label={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
+            >
+              {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
           {errors.confirmPassword && <small>{errors.confirmPassword.message}</small>}
         </label>
 

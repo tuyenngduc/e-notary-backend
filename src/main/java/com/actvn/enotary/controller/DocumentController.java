@@ -5,6 +5,7 @@ import com.actvn.enotary.dto.response.ApiResponseUtil;
 import com.actvn.enotary.dto.response.DocumentResponse;
 import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
+import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
@@ -69,8 +70,10 @@ public class DocumentController {
         boolean isOwner = req.getClient() != null && req.getClient().getEmail().equals(email);
         boolean isAssignedNotary = req.getNotary() != null && req.getNotary().getEmail().equals(email);
         boolean isAdmin = userDetails.getRole() != null && userDetails.getRole().name().equals("ADMIN");
+        boolean isNotary = userDetails.getRole() != null && userDetails.getRole().name().equals("NOTARY");
+        boolean canInspectProcessingRequest = isNotary && req.getStatus() == RequestStatus.PROCESSING;
 
-        if (!isOwner && !isAssignedNotary && !isAdmin) {
+        if (!isOwner && !isAssignedNotary && !isAdmin && !canInspectProcessingRequest) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 

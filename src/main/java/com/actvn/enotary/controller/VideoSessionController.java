@@ -9,6 +9,7 @@ import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.VideoSessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VideoSessionController {
     private final VideoSessionService videoSessionService;
+
+    @Value("${app.frontend.base-url:http://localhost:5173}")
+    private String frontendBaseUrl;
     /**
      * Tạo video session cho appointment (Notary/Admin gọi API này)
      * POST /api/video/sessions
@@ -87,12 +91,13 @@ public class VideoSessionController {
     @PostMapping("/room/{roomId}/join")
     public ResponseEntity<ApiResponse<VideoSessionResponse>> joinSession(
             Authentication authentication,
-            @PathVariable("roomId") String roomId) {
+            @PathVariable("roomId") String roomId,
+            @RequestParam("token") String token) {
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             throw new AppException(ErrorCode.INVALID_AUTHENTICATION);
         }
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        VideoSessionResponse response = videoSessionService.joinSession(roomId, userDetails.getUsername());
+        VideoSessionResponse response = videoSessionService.joinSession(roomId, userDetails.getUsername(), token);
         return ResponseEntity.ok(ApiResponseUtil.success(response, "Tham gia phòng thành công"));
     }
     /**
@@ -132,40 +137,26 @@ public class VideoSessionController {
         return ResponseEntity.ok(ApiResponseUtil.success(response, "Hủy phiên video thành công"));
     }
     /**
-     * Simple endpoint để test video room (development only)
+     * Redirect meeting link sang frontend room để render UI video call.
      * GET /api/video/room/{roomId}
      */
     @GetMapping("/room/{roomId}")
-    public ResponseEntity<String> getVideoRoom(
+    public ResponseEntity<Void> getVideoRoom(
             @PathVariable("roomId") String roomId,
             @RequestParam(value = "token", required = false) String token) {
         if (token != null && !token.isBlank()) {
             videoSessionService.verifySessionToken(token);
         }
-        String html = """
-                <html>
-                <head>
-                    <title>Video Meet - %s</title>
-                    <style>
-                        body { font-family: Arial; margin: 40px; }
-                        .container { max-width: 800px; margin: 0 auto; }
-                        h1 { color: #333; }
-                        p { color: #666; }
-                        .info { background: #f0f0f0; padding: 10px; border-radius: 5px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h1>Video Meeting Room</h1>
-                        <div class="info">
-                            <p><strong>Room ID:</strong> %s</p>
-                            <p>Phòng họp online sẽ được tải từ frontend.</p>
-                            <p>Frontend có thể sử dụng WebRTC library (Jitsi, Daily.co, etc.) để xây dựng UI video call.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """.formatted(roomId, roomId);
-        return ResponseEntity.ok(html);
+        StringBuilder redirectUrl = new StringBuilder(frontendBaseUrl)
+                .append("/video/room/")
+                .append(roomId);
+
+        if (token != null && !token.isBlank()) {
+            redirectUrl.append("?token=").append(token);
+        }
+
+        return ResponseEntity.status(302)
+                .location(URI.create(redirectUrl.toString()))
+                .build();
     }
 }

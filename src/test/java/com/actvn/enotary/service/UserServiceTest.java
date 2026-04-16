@@ -39,11 +39,31 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RefreshTokenService refreshTokenService;
+
+    @Mock
+    private AuditLogService auditLogService;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, userProfileRepository, passwordEncoder);
+        userService = new UserService(
+                userRepository,
+                userProfileRepository,
+                passwordEncoder,
+                refreshTokenService,
+                auditLogService
+        );
+    }
+
+    private User makeAdmin(UUID adminUserId) {
+        User admin = new User();
+        admin.setUserId(adminUserId);
+        admin.setEmail("admin@example.com");
+        admin.setRole(Role.ADMIN);
+        return admin;
     }
 
     private SignUpRequest makeRequest(String email, String phone, String password) {
@@ -199,11 +219,13 @@ class UserServiceTest {
     // Tests for createNotary
     @Test
     void createNotarySuccess() {
+        UUID adminUserId = UUID.randomUUID();
         String emailInput = "Notary@Example.COM";
         String phoneInput = "+84912345678"; // normalize to 0912345678
         String password = "notary-pass";
 
         SignUpRequest req = makeRequest(emailInput, phoneInput, password);
+        when(userRepository.findById(adminUserId)).thenReturn(Optional.of(makeAdmin(adminUserId)));
 
         when(userRepository.existsByEmail("notary@example.com")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(false);
@@ -216,7 +238,7 @@ class UserServiceTest {
             return u;
         });
 
-        User res = userService.createNotary(req);
+        User res = userService.createNotary(req, adminUserId);
 
         assertNotNull(res.getUserId());
         assertEquals("notary@example.com", res.getEmail());
@@ -232,44 +254,52 @@ class UserServiceTest {
 
     @Test
     void createNotaryDuplicateEmailThrowsConflict() {
+        UUID adminUserId = UUID.randomUUID();
         SignUpRequest req = makeRequest("a@b.com", "0912345678", "p");
+        when(userRepository.findById(adminUserId)).thenReturn(Optional.of(makeAdmin(adminUserId)));
         when(userRepository.existsByEmail("a@b.com")).thenReturn(true);
 
-        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req, adminUserId));
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
         assertEquals("Email đã tồn tại", ex.getMessage());
     }
 
     @Test
     void createNotaryDuplicatePhoneThrowsConflict() {
+        UUID adminUserId = UUID.randomUUID();
         SignUpRequest req = makeRequest("a@b.com", "+84912345678", "p");
+        when(userRepository.findById(adminUserId)).thenReturn(Optional.of(makeAdmin(adminUserId)));
         when(userRepository.existsByEmail("a@b.com")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(true);
 
-        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req, adminUserId));
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
         assertEquals("Số điện thoại đã tồn tại", ex.getMessage());
     }
 
     @Test
     void createNotarySaveRaceThrowsConflict() {
+        UUID adminUserId = UUID.randomUUID();
         SignUpRequest req = makeRequest("a@b.com", "+84912345678", "p");
+        when(userRepository.findById(adminUserId)).thenReturn(Optional.of(makeAdmin(adminUserId)));
         when(userRepository.existsByEmail("a@b.com")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("0912345678")).thenReturn(false);
         when(passwordEncoder.encode(any())).thenReturn("h");
         when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
 
-        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req, adminUserId));
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
         assertEquals("Email hoặc số điện thoại đã tồn tại", ex.getMessage());
     }
 
     @Test
     void createNotaryInvalidPhoneThrowsBadRequest() {
+        UUID adminUserId = UUID.randomUUID();
         SignUpRequest req = makeRequest("a@b.com", "12345", "p");
+        when(userRepository.findById(adminUserId)).thenReturn(Optional.of(makeAdmin(adminUserId)));
         // normalization will leave "12345" which is invalid
 
-        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req));
+        AppException ex = assertThrows(AppException.class, () -> userService.createNotary(req, adminUserId));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Số điện thoại không hợp lệ", ex.getMessage());
     }
