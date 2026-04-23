@@ -82,7 +82,7 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/requests").hasRole("CLIENT")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/profile/**").hasRole("CLIENT")
+                        .requestMatchers("/api/profile/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter,
@@ -125,6 +125,7 @@ public class SecurityConfig {
             String message
     ) throws java.io.IOException {
         response.setStatus(status.value());
+        response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
         ErrorResponse body = ErrorResponse.of(

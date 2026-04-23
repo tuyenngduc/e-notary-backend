@@ -13,14 +13,17 @@ import com.actvn.enotary.entity.Document;
 import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.enums.DocType;
 import com.actvn.enotary.enums.RequestStatus;
+import com.actvn.enotary.enums.VerificationStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
+import com.actvn.enotary.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -39,6 +42,18 @@ import java.util.stream.Collectors;
 public class NotaryRequestController {
 
     private final NotaryRequestService notaryRequestService;
+    private final UserService userService;
+
+    private void assertNotaryVerified(CustomUserDetails userDetails) {
+        if (userDetails.getRole() == null || !"NOTARY".equals(userDetails.getRole().name())) {
+            return;
+        }
+
+        VerificationStatus status = userService.getById(userDetails.getId()).getVerificationStatus();
+        if (status != VerificationStatus.VERIFIED) {
+            throw new AppException("Tài khoản công chứng viên chưa được xác thực", HttpStatus.FORBIDDEN);
+        }
+    }
 
     private NotaryRequestResponse toResponse(NotaryRequest request) {
         String meetingUrl = notaryRequestService.getMeetingUrlByRequestId(request.getRequestId());
@@ -225,6 +240,9 @@ public class NotaryRequestController {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
 
+        // Notary must be VERIFIED to process requests
+        assertNotaryVerified(userDetails);
+
         NotaryRequest updated = notaryRequestService.rejectRequest(id, userDetails.getUsername(), request.getReason());
         return ResponseEntity.ok(ApiResponseUtil.success(toResponse(updated), "Từ chối yêu cầu thành công"));
     }
@@ -243,6 +261,9 @@ public class NotaryRequestController {
         if (!isNotary) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
+
+        // Notary must be VERIFIED to accept requests
+        assertNotaryVerified(userDetails);
 
         NotaryRequest updated = notaryRequestService.acceptRequest(id, userDetails.getUsername());
         return ResponseEntity.ok(ApiResponseUtil.success(toResponse(updated), "Tiếp nhận yêu cầu thành công"));
@@ -264,6 +285,9 @@ public class NotaryRequestController {
         if (!isNotary && !isAdmin) {
             throw new AppException(ErrorCode.INVALID_AUTHORIZATION);
         }
+
+        // Notary must be VERIFIED to schedule appointments
+        assertNotaryVerified(userDetails);
 
         AppointmentResponse response = notaryRequestService.scheduleAppointment(id, userDetails.getUsername(), request);
         URI location = URI.create("/api/appointments/" + response.getAppointmentId());

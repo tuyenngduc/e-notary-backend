@@ -65,7 +65,7 @@ public class ApiResponseUtil {
     /**
      * Create a success response for NO_CONTENT (204)
      */
-    public static <Void> ApiResponse<Void> noContent() {
+    public static ApiResponse<Void> noContent() {
         return ApiResponse.<Void>builder()
                 .status(HttpStatus.NO_CONTENT.value())
                 .message("Thành công")

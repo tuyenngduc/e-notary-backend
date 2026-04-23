@@ -1,12 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { toApiErrorMessage } from '../../../lib/apiError';
 import { getDefaultRouteByRole } from '../../../lib/roleRedirect';
 import { type RegisterFormValues, registerSchema } from '../authSchemas';
-import { AuthLayout } from '../components/AuthLayout';
 
 export function RegisterPage() {
   const { register: registerAccount } = useAuth();
@@ -29,7 +28,6 @@ export function RegisterPage() {
     },
   });
 
-
   const onSubmit = handleSubmit(async (data) => {
     setSubmitError('');
     try {
@@ -45,78 +43,82 @@ export function RegisterPage() {
   });
 
   return (
-    <AuthLayout
-      title="Đăng ký tải khoản công chứng trực tuyến"
-      subtitle="Nhanh chóng, an toàn và tiện lợi - tạo tài khoản của bạn ngay hôm nay để trải nghiệm dịch vụ công chứng trực tuyến hàng đầu."
-      alternateText="Đã có tài khoản?"
-      alternateLabel="Đăng nhập"
-      alternateTo="/login"
-    >
-      <div className="form-header">
-        <h2>Đăng ký</h2>
-        <p>Tạo tài khoản trong vòng 1 phútcd </p>
-      </div>
+    <main className="auth-screen">
+      <section className="auth-card">
+        <div className="card-header">
+          <h1>Đăng ký</h1>
+          <p>Tạo tài khoản khách hàng để sử dụng hệ thống công chứng trực tuyến.</p>
+        </div>
 
-      <form className="auth-form" onSubmit={onSubmit} noValidate>
-        <label className="field">
-          <span>Email</span>
-          <input type="email" placeholder="Nhập địa chỉ email của bạn" {...register('email')} />
-          {errors.email && <small>{errors.email.message}</small>}
-        </label>
+        <form className="form-stack" onSubmit={onSubmit} noValidate>
+          <label className="field">
+            <span>Email</span>
+            <input type="email" placeholder="email@example.com" {...register('email')} />
+            {errors.email && <small>{errors.email.message}</small>}
+          </label>
 
-        <label className="field">
-          <span>Số điện thoại</span>
-          <input type="tel" placeholder="0987 654 321 hoặc +84 ..." {...register('phoneNumber')} />
-          {errors.phoneNumber && <small>{errors.phoneNumber.message}</small>}
-        </label>
+          <label className="field">
+            <span>Số điện thoại</span>
+            <input type="tel" placeholder="0987xxxxxx" {...register('phoneNumber')} />
+            {errors.phoneNumber && <small>{errors.phoneNumber.message}</small>}
+          </label>
 
-        <label className="field">
-          <span>Mật khẩu</span>
-          <div className="password-field">
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Tối thiểu 6 ký tự"
-              {...register('password')}
-            />
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
-            >
-              {showPassword ? '👁️' : '👁️‍🗨️'}
-            </button>
-          </div>
-          {errors.password && <small>{errors.password.message}</small>}
-        </label>
+          <label className="field">
+            <span>Mật khẩu</span>
+            <div className="password-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Tối thiểu 6 ký tự"
+                {...register('password')}
+              />
+              <button
+                type="button"
+                className="password-eye"
+                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                onClick={() => setShowPassword((prev) => !prev)}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+            {errors.password && <small>{errors.password.message}</small>}
+          </label>
 
-        <label className="field">
-          <span>Nhập lại mật khẩu</span>
-          <div className="password-field">
-            <input
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder="Xác nhận mật khẩu của bạn"
-              {...register('confirmPassword')}
-            />
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              aria-label={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
-            >
-              {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
-            </button>
-          </div>
-          {errors.confirmPassword && <small>{errors.confirmPassword.message}</small>}
-        </label>
+          <label className="field">
+            <span>Nhập lại mật khẩu</span>
+            <div className="password-wrap">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder="Nhập lại mật khẩu"
+                {...register('confirmPassword')}
+              />
+              <button
+                type="button"
+                className="password-eye"
+                aria-label={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+              >
+                {showConfirmPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+            {errors.confirmPassword && <small>{errors.confirmPassword.message}</small>}
+          </label>
 
-        {submitError && <div className="form-error">{submitError}</div>}
+          {submitError && <div className="form-error">{submitError}</div>}
 
-        <button type="submit" className="primary-btn" disabled={isSubmitting}>
-          {isSubmitting ? 'Đang xử lý...' : 'Tạo tài khoản'}
-        </button>
-      </form>
-    </AuthLayout>
+          <button type="submit" className="primary-btn w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Đang xử lý...' : 'Đăng ký'}
+          </button>
+        </form>
+
+        <div className="auth-footer-links">
+          <p>
+            Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
+          </p>
+          <p>
+            <Link to="/">Quay lại trang chủ</Link>
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
-

@@ -199,6 +199,13 @@ public class NotaryRequestService {
         return notaryRequestRepository.findByNotaryUserId(notaryUserId, pageable);
     }
 
+    public List<AppointmentResponse> getMyAppointments(UUID notaryUserId) {
+        return appointmentRepository.findByRequestNotaryUserIdOrderByScheduledTimeAsc(notaryUserId)
+                .stream()
+                .map(AppointmentResponse::fromEntity)
+                .toList();
+    }
+
     private Path findProjectRoot() {
         Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         Path cur = cwd;

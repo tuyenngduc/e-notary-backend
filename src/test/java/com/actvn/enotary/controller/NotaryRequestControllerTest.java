@@ -13,10 +13,12 @@ import com.actvn.enotary.enums.ContractType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.enums.VerificationStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
+import com.actvn.enotary.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +53,7 @@ class NotaryRequestControllerTest {
 
     private MockMvc mockMvc;
     private NotaryRequestService notaryRequestService;
+    private UserService userService;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule());
 
@@ -65,7 +68,8 @@ class NotaryRequestControllerTest {
     @BeforeEach
     void setUp() {
         notaryRequestService = Mockito.mock(NotaryRequestService.class);
-        NotaryRequestController controller = new NotaryRequestController(notaryRequestService);
+        userService = Mockito.mock(UserService.class);
+        NotaryRequestController controller = new NotaryRequestController(notaryRequestService, userService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new com.actvn.enotary.exception.GlobalExceptionHandler())
                 .build();
@@ -82,9 +86,13 @@ class NotaryRequestControllerTest {
         notaryUser.setUserId(UUID.randomUUID());
         notaryUser.setEmail("notary@example.com");
         notaryUser.setRole(com.actvn.enotary.enums.Role.NOTARY);
+        notaryUser.setVerificationStatus(VerificationStatus.VERIFIED);
 
         notaryDetails = new CustomUserDetails(notaryUser);
         notaryAuth = new UsernamePasswordAuthenticationToken(notaryDetails, null, notaryDetails.getAuthorities());
+
+        // Notary verification is enforced by controller, so tests must return VERIFIED for notary user.
+        Mockito.lenient().when(userService.getById(eq(notaryUser.getUserId()))).thenReturn(notaryUser);
     }
 
     @Test

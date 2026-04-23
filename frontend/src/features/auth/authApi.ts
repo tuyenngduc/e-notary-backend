@@ -1,4 +1,5 @@
 import { api } from '../../lib/http';
+import { getAuthSession } from '../../lib/authStorage';
 import type { LoginRequest, LoginResponse, SignUpRequest, UserResponse } from '../../types/auth';
 
 interface ApiEnvelope<T> {
@@ -17,3 +18,7 @@ export async function registerApi(payload: SignUpRequest): Promise<UserResponse>
   return response.data.data;
 }
 
+export async function logoutApi(): Promise<void> {
+  const refreshToken = getAuthSession()?.refreshToken;
+  await api.post('/api/auth/logout', refreshToken ? { refreshToken } : {});
+}

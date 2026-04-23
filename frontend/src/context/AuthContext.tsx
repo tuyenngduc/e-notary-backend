@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { clearAuthSession, getAuthSession, setAuthSession } from '../lib/authStorage';
-import { loginApi } from '../features/auth/authApi';
+import { loginApi, logoutApi, registerApi } from '../features/auth/authApi';
 import type { AuthSession, LoginRequest, SignUpRequest } from '../types/auth';
-import { registerApi } from '../features/auth/authApi';
 import { AUTH_SESSION_CLEARED_EVENT } from '../lib/http';
 
 interface AuthContextValue {
@@ -10,7 +9,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   login: (payload: LoginRequest) => Promise<AuthSession>;
   register: (payload: SignUpRequest) => Promise<AuthSession>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -50,7 +49,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return login({ email: payload.email, password: payload.password });
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // Clear local auth state even if revoke fails.
+    }
     clearAuthSession();
     setSession(null);
   };

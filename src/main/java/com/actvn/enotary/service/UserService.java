@@ -94,7 +94,7 @@ public class UserService {
         user.setPhoneNumber(phone);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.NOTARY);
-        user.setVerificationStatus(VerificationStatus.VERIFIED);
+        user.setVerificationStatus(VerificationStatus.PENDING);
         try {
             User savedUser = userRepository.save(user);
             auditLogService.logAction(admin, "NOTARY_CREATED", "users", savedUser.getUserId());

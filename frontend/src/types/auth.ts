@@ -23,6 +23,7 @@ export interface UserResponse {
   email: string;
   role?: UserRole;
   phoneNumber?: string;
+  verificationStatus?: 'PENDING' | 'VERIFIED' | 'REJECTED';
 }
 
 export interface RefreshRequest {
