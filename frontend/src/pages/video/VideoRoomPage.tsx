@@ -56,6 +56,17 @@ function streamHasAudio(stream: MediaStream | null): boolean {
   return !!stream && stream.getAudioTracks().some((track) => track.enabled);
 }
 
+// Module-level reference to the active stream — outside React lifecycle.
+// This guarantees track.stop() can always be called regardless of component state.
+let _activeMediaStream: MediaStream | null = null;
+
+function stopAllMediaTracks(): void {
+  if (_activeMediaStream) {
+    _activeMediaStream.getTracks().forEach((track) => track.stop());
+    _activeMediaStream = null;
+  }
+}
+
 export function VideoRoomPage() {
   const { roomId = '' } = useParams();
   const [searchParams] = useSearchParams();
@@ -88,8 +99,16 @@ export function VideoRoomPage() {
 
   const canEndSession = authSession?.role?.toUpperCase() === 'NOTARY';
 
+  // Register beforeunload and pagehide as last-resort camera/mic release
   useEffect(() => {
-  }, [setupStage]);
+    const handlePageExit = () => stopAllMediaTracks();
+    window.addEventListener('beforeunload', handlePageExit);
+    window.addEventListener('pagehide', handlePageExit);
+    return () => {
+      window.removeEventListener('beforeunload', handlePageExit);
+      window.removeEventListener('pagehide', handlePageExit);
+    };
+  }, []);
 
   const formatSetupError = (stage: SetupStage, rawError: unknown): { message: string; details: string } => {
     const baseMessage = toApiErrorMessage(rawError, 'Không thể khởi tạo video call.');
@@ -185,14 +204,9 @@ export function VideoRoomPage() {
       peerConnection.close();
     }
 
-    // Stop all media tracks to release camera and microphone
-    const localStream = localStreamRef.current;
+    // Stop all media tracks via module-level tracker (most reliable)
+    stopAllMediaTracks();
     localStreamRef.current = null;
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        track.stop();
-      });
-    }
 
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
@@ -207,6 +221,7 @@ export function VideoRoomPage() {
   };
 
   useEffect(() => {
+    let isEffectActive = true;
     disposedRef.current = false;
 
     if (!roomId || !token || !authSession?.token || !authSession.email) {
@@ -261,14 +276,23 @@ export function VideoRoomPage() {
           audio: true,
         });
 
-        // If the component was unmounted while we were awaiting getUserMedia,
-        // stop all tracks immediately so the camera/mic indicator turns off.
-        if (disposedRef.current) {
+        // If the component was unmounted (or this specific effect was cleaned up)
+        // while we were awaiting getUserMedia, stop all tracks immediately.
+        if (!isEffectActive || disposedRef.current) {
           localStream.getTracks().forEach((track) => track.stop());
           return;
         }
 
+        // Extremely safe fallback: if we somehow already have a stream, stop it before overwriting
+        if (_activeMediaStream) {
+          _activeMediaStream.getTracks().forEach((t) => t.stop());
+        }
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+
         localStreamRef.current = localStream;
+        _activeMediaStream = localStream; // module-level tracker for guaranteed cleanup
         setCameraOn(streamHasVideo(localStream));
         setMicOn(streamHasAudio(localStream));
 
@@ -466,14 +490,10 @@ export function VideoRoomPage() {
     void setupCall();
 
     return () => {
+      isEffectActive = false;
       disposedRef.current = true;
-      // Stop all media tracks on unmount to release camera/microphone
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
-      // Don't send LEAVE here — server detects disconnect via afterConnectionClosed.
-      // Sending LEAVE in cleanup causes race conditions in React StrictMode (JOIN→LEAVE→JOIN).
+      stopAllMediaTracks();
+      localStreamRef.current = null;
       closeConnections(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,11 +538,8 @@ export function VideoRoomPage() {
   };
 
   const handleLeaveRoom = () => {
-    // Explicitly stop all tracks before navigating to ensure camera/mic indicator turns off
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
+    stopAllMediaTracks();
+    localStreamRef.current = null;
     disposedRef.current = true;
     closeConnections(true);
     navigate(getDefaultRouteByRole(authSession?.role), { replace: true });
@@ -539,11 +556,8 @@ export function VideoRoomPage() {
     try {
       await endVideoSessionApi(sessionInfo.sessionId, 'Kết thúc từ giao diện công chứng viên');
       sendSignal({ type: 'END', roomId, message: 'Phiên họp đã được kết thúc.' });
-      // Stop all tracks before navigating
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
+      stopAllMediaTracks();
+      localStreamRef.current = null;
       disposedRef.current = true;
       closeConnections(true);
       navigate('/notary/appointments', { replace: true });
