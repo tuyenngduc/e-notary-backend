@@ -21,7 +21,7 @@ public class RefreshToken {
     private String jti;
 
     @Column(nullable = false)
-    private String token; // the actual refresh token string (optional)
+    private String token;
 
     @Column(nullable = false)
     private String email;

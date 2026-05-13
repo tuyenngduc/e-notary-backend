@@ -38,3 +38,7 @@ build/
 .env.properties
 application-local.properties
 application-local.yml
+uploads/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

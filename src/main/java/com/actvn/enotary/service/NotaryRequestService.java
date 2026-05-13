@@ -15,7 +15,7 @@ import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.VideoSessionStatus;
 import com.actvn.enotary.exception.AppException;
-import com.actvn.enotary.exception.ErrorCodes;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.repository.AppointmentRepository;
 import com.actvn.enotary.repository.DocumentRepository;
 import com.actvn.enotary.repository.NotaryRequestRepository;
@@ -52,7 +52,6 @@ public class NotaryRequestService {
     private final DocumentRepository documentRepository;
     private final AppointmentRepository appointmentRepository;
     private final VideoSessionRepository videoSessionRepository;
-    private final AppointmentEmailService appointmentEmailService;
 
     @Value("${app.meeting.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -104,30 +103,27 @@ public class NotaryRequestService {
             throw alreadyAssignedException();
         }
 
-        // Idempotent: same notary can call accept again after request already moved to PROCESSING.
-        if (request.getStatus() == RequestStatus.PROCESSING
+        if (request.getStatus() == RequestStatus.ACCEPTED
                 && request.getNotary() != null
                 && request.getNotary().getUserId().equals(notary.getUserId())) {
             return request;
         }
 
-        if (request.getStatus() != RequestStatus.NEW) {
-            throw new AppException("Yêu cầu không ở trạng thái NEW để tiếp nhận", HttpStatus.BAD_REQUEST);
+        if (request.getStatus() != RequestStatus.NEW && request.getStatus() != RequestStatus.PROCESSING) {
+            throw new AppException("Yêu cầu không ở trạng thái chờ tiếp nhận", HttpStatus.BAD_REQUEST);
         }
 
         DocumentRequirementResponse documentRequirements = buildDocumentRequirements(request);
         if (!documentRequirements.isReadyForAccept()) {
             String missing = documentRequirements.getMissingDocTypes().stream().map(Enum::name).collect(java.util.stream.Collectors.joining(", "));
             throw new AppException(
-                    "Hồ sơ chưa đủ để tiếp nhận. Thiếu: " + missing,
-                    HttpStatus.BAD_REQUEST,
-                    ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS,
+                    ErrorCode.REQUEST_MISSING_REQUIRED_DOCUMENTS,
                     Map.of("missingDocTypes", documentRequirements.getMissingDocTypes().stream().map(Enum::name).toList())
             );
         }
 
         request.setNotary(notary);
-        request.setStatus(RequestStatus.PROCESSING);
+        request.setStatus(RequestStatus.ACCEPTED);
         request.setUpdatedAt(OffsetDateTime.now());
         return notaryRequestRepository.save(request);
     }
@@ -177,13 +173,18 @@ public class NotaryRequestService {
         return notaryRequestRepository.findByClientUserId(userId);
     }
 
-    // When status is null return NEW + requests assigned to this notary.
+    public String getMeetingUrlByRequestId(UUID requestId) {
+        return appointmentRepository.findByRequestRequestId(requestId)
+                .map(Appointment::getMeetingUrl)
+                .orElse(null);
+    }
+
     public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, Pageable pageable) {
         if (status == null) {
-            return notaryRequestRepository.findByStatusOrNotaryUserId(RequestStatus.NEW, notaryUserId, pageable);
+            return notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageable);
         }
-        if (status == RequestStatus.NEW) {
-            return notaryRequestRepository.findByStatus(status, pageable);
+        if (status == RequestStatus.PROCESSING) {
+            return notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageable);
         }
         return notaryRequestRepository.findByNotaryUserIdAndStatus(notaryUserId, status, pageable);
     }
@@ -194,6 +195,13 @@ public class NotaryRequestService {
 
     public Page<NotaryRequest> listAcceptedByNotary(UUID notaryUserId, Pageable pageable) {
         return notaryRequestRepository.findByNotaryUserId(notaryUserId, pageable);
+    }
+
+    public List<AppointmentResponse> getMyAppointments(UUID notaryUserId) {
+        return appointmentRepository.findByRequestNotaryUserIdOrderByScheduledTimeAsc(notaryUserId)
+                .stream()
+                .map(AppointmentResponse::fromEntity)
+                .toList();
     }
 
     private Path findProjectRoot() {
@@ -210,6 +218,10 @@ public class NotaryRequestService {
 
     public Path getProjectRootPublic() {
         return findProjectRoot();
+    }
+
+    public List<Document> getDocumentsByRequestId(UUID requestId) {
+        return documentRepository.findByRequest_RequestId(requestId);
     }
 
     @Transactional
@@ -238,13 +250,15 @@ public class NotaryRequestService {
         doc.setFileHash(stored.hash());
         doc.setCreatedAt(OffsetDateTime.now());
 
-        return documentRepository.save(doc);
+        Document saved = documentRepository.save(doc);
+        syncRequestStatusAfterRequiredDocumentsCompleted(request);
+        return saved;
     }
 
     @Transactional
     public Document replaceDocument(UUID documentId, String uploaderEmail, MultipartFile file) {
         Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new AppException("Không tìm thấy tài liệu", HttpStatus.NOT_FOUND, ErrorCodes.DOCUMENT_NOT_FOUND));
+                .orElseThrow(() -> new AppException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         NotaryRequest request = doc.getRequest();
         User uploader = userRepository.findByEmail(uploaderEmail)
@@ -265,7 +279,24 @@ public class NotaryRequestService {
         doc.setFilePath(stored.relativePath());
         doc.setFileHash(stored.hash());
         doc.setUpdatedAt(OffsetDateTime.now());
-        return documentRepository.save(doc);
+        Document saved = documentRepository.save(doc);
+        syncRequestStatusAfterRequiredDocumentsCompleted(request);
+        return saved;
+    }
+
+    private void syncRequestStatusAfterRequiredDocumentsCompleted(NotaryRequest request) {
+        if (request.getStatus() != RequestStatus.NEW) {
+            return;
+        }
+
+        DocumentRequirementResponse documentRequirements = buildDocumentRequirements(request);
+        if (!documentRequirements.isReadyForAccept()) {
+            return;
+        }
+
+        request.setStatus(RequestStatus.PROCESSING);
+        request.setUpdatedAt(OffsetDateTime.now());
+        notaryRequestRepository.save(request);
     }
 
     private StoredFileResult storeFile(MultipartFile file) {
@@ -313,9 +344,7 @@ public class NotaryRequestService {
                 || request.getStatus() == RequestStatus.CANCELLED
                 || request.getStatus() == RequestStatus.COMPLETED) {
             throw new AppException(
-                    "Không thể upload/cập nhật tài liệu khi yêu cầu đã kết thúc",
-                    HttpStatus.CONFLICT,
-                    ErrorCodes.REQUEST_TERMINAL_STATUS,
+                    ErrorCode.REQUEST_TERMINAL_STATUS,
                     Map.of("status", request.getStatus().name())
             );
         }
@@ -332,9 +361,7 @@ public class NotaryRequestService {
 
         if (!replaceableTypes.contains(type)) {
             throw new AppException(
-                    "Loại tài liệu này không được phép thay thế",
-                    HttpStatus.BAD_REQUEST,
-                    ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                    ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED,
                     Map.of("docType", type.name())
             );
         }
@@ -343,9 +370,7 @@ public class NotaryRequestService {
             List<DocType> requestDocTypes = documentRepository.findDocTypesByRequestId(doc.getRequest().getRequestId());
             if (requestDocTypes.contains(DocType.SIGNED_DOCUMENT)) {
                 throw new AppException(
-                        "Không thể thay thế SESSION_VIDEO sau khi đã tạo biên bản/ký số",
-                        HttpStatus.CONFLICT,
-                        ErrorCodes.DOCUMENT_REPLACE_NOT_ALLOWED,
+                        ErrorCode.DOCUMENT_REPLACE_NOT_ALLOWED,
                         Map.of("docType", type.name(), "reason", "SIGNED_DOCUMENT_EXISTS")
                 );
             }
@@ -399,9 +424,9 @@ public class NotaryRequestService {
             throw new AppException("Không có quyền lên lịch cho yêu cầu này", HttpStatus.FORBIDDEN);
         }
 
-        if (request.getStatus() != RequestStatus.PROCESSING) {
+        if (request.getStatus() != RequestStatus.ACCEPTED) {
             throw new AppException(
-                    "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái PROCESSING (hiện tại: " + request.getStatus() + ")",
+                    "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái ACCEPTED (hiện tại: " + request.getStatus() + ")",
                     HttpStatus.BAD_REQUEST);
         }
 
@@ -449,15 +474,11 @@ public class NotaryRequestService {
             appointmentRepository.save(saved);
         }
 
-        request.setStatus(RequestStatus.SCHEDULED);
-        request.setUpdatedAt(OffsetDateTime.now());
-        notaryRequestRepository.save(request);
+         request.setStatus(RequestStatus.SCHEDULED);
+         request.setUpdatedAt(OffsetDateTime.now());
+         notaryRequestRepository.save(request);
 
-        if (request.getServiceType() == ServiceType.ONLINE) {
-            appointmentEmailService.sendOnlineMeetingLinkToClient(request, saved);
-        }
-
-        return AppointmentResponse.fromEntity(saved);
+         return AppointmentResponse.fromEntity(saved);
     }
 
     @Transactional
@@ -494,10 +515,6 @@ public class NotaryRequestService {
     }
 
     private AppException alreadyAssignedException() {
-        return new AppException(
-                "Yêu cầu đã được công chứng viên khác tiếp nhận",
-                HttpStatus.CONFLICT,
-                ErrorCodes.REQUEST_ALREADY_ASSIGNED
-        );
+        return new AppException(ErrorCode.REQUEST_ALREADY_ASSIGNED);
     }
 }

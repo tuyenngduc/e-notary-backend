@@ -1,35 +1,30 @@
 package com.actvn.enotary.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.security.core.AuthenticationException;
 
-import java.util.HashMap;
-import java.util.Map;
-
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
+    public ResponseEntity<ErrorResponse> handleValidationExceptions(
+            MethodArgumentNotValidException ex,
+            HttpServletRequest request) {
+        String message = ex.getBindingResult().getFieldError() != null
+                ? ex.getBindingResult().getFieldError().getDefaultMessage()
+                : ErrorCode.VALIDATION_ERROR.getMessage();
 
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-
-        ErrorResponse errorResponse = new ErrorResponse(
+        ErrorResponse errorResponse = ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                message,
+                request.getRequestURI(),
                 ErrorCode.VALIDATION_ERROR.name(),
-                "Dữ liệu đầu vào không hợp lệ",
-                "VALIDATION_ERROR",
-                errors,
                 null
         );
 
@@ -37,30 +32,31 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AppException.class)
-    public ResponseEntity<ErrorResponse> handleAppException(AppException ex) {
-        String errorCode = ex.getErrorCode() != null
-                ? ex.getErrorCode().name()
-                : ErrorCode.fromHttpStatus(ex.getStatus()).name();
-
-        ErrorResponse errorResponse = new ErrorResponse(
-                ex.getStatus().value(),
-                errorCode,
-                ex.getMessage(),
-                ex.getCode(),
-                null,
-                ex.getDetails()
-        );
+    public ResponseEntity<ErrorResponse> handleAppException(
+            AppException ex,
+            HttpServletRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString())
+                .status(ex.getStatus().value())
+                .error(ex.getStatus().getReasonPhrase())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .code(ex.getCode())
+                .details(ex.getDetails())
+                .build();
         return new ResponseEntity<>(errorResponse, ex.getStatus());
     }
 
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ErrorResponse> handleAuthenticationException(AuthenticationException ex) {
-        ErrorResponse errorResponse = new ErrorResponse(
+    public ResponseEntity<ErrorResponse> handleAuthenticationException(
+            AuthenticationException ex,
+            HttpServletRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.of(
                 HttpStatus.UNAUTHORIZED.value(),
+                HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                ErrorCode.AUTHENTICATION_FAILED.getMessage(),
+                request.getRequestURI(),
                 ErrorCode.AUTHENTICATION_FAILED.name(),
-                "Authentication failed.",
-                "AUTHENTICATION_FAILED",
-                null,
                 null
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);

@@ -13,5 +13,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
     Optional<Appointment> findByRequestRequestId(UUID requestId);
 
     boolean existsByRequestRequestId(UUID requestId);
+
+    java.util.List<Appointment> findByRequestNotaryUserIdOrderByScheduledTimeAsc(UUID notaryId);
 }
 

@@ -23,6 +23,7 @@ public class User {
     @Enumerated(EnumType.STRING)
     private VerificationStatus verificationStatus;
 
+
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
     private UserProfile profile;

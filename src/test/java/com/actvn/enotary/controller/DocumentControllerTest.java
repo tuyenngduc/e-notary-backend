@@ -75,8 +75,8 @@ class DocumentControllerTest {
                         })
                         .principal(clientAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.documentId").value(documentId.toString()))
-                .andExpect(jsonPath("$.docType").value("DRAFT_CONTRACT"));
+                .andExpect(jsonPath("$.data.documentId").value(documentId.toString()))
+                .andExpect(jsonPath("$.data.docType").value("DRAFT_CONTRACT"));
     }
 
     @Test

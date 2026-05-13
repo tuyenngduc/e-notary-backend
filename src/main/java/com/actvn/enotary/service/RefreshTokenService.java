@@ -34,7 +34,6 @@ public class RefreshTokenService {
         rt.setJti(jti);
         rt.setToken(token);
         rt.setEmail(email == null ? null : email.toLowerCase(Locale.ROOT));
-        // extract expiration
         Instant exp = jwtUtil.getClaims(token).getExpiration().toInstant();
         rt.setExpiresAt(exp);
         rt.setRevoked(false);
@@ -57,11 +56,9 @@ public class RefreshTokenService {
             throw new AppException("Refresh token expired or revoked", HttpStatus.UNAUTHORIZED);
         }
 
-        // revoke old
         rt.setRevoked(true);
         refreshTokenRepository.save(rt);
 
-        // create and return new
         return createRefreshToken(rt.getEmail());
     }
 
@@ -99,7 +96,6 @@ public class RefreshTokenService {
         }
 
         if (!handled) {
-            // fallback: try find by token string
             Optional<RefreshToken> byToken = refreshTokenRepository.findByToken(token);
             if (byToken.isPresent()) {
                 RefreshToken rt = byToken.get();
@@ -145,7 +141,6 @@ public class RefreshTokenService {
             return;
         }
         String jti = jwtUtil.extractJti(token);
-        // store jti in revoked tokens
         RevokedToken revoked = new RevokedToken();
         revoked.setJti(jti);
         revoked.setExpiresAt(jwtUtil.getClaims(token).getExpiration().toInstant());

@@ -42,7 +42,6 @@ public class JwtFilter extends OncePerRequestFilter {
             if (jwtUtil.validateToken(token)) {
 
                 String jti = jwtUtil.extractJti(token);
-                // if token is revoked, don't authenticate
                 if (refreshTokenService.isAccessTokenRevoked(jti)) {
                     filterChain.doFilter(request, response);
                     return;
@@ -50,8 +49,8 @@ public class JwtFilter extends OncePerRequestFilter {
 
                 String email = jwtUtil.extractEmail(token);
 
-                // load full user details so principal is CustomUserDetails (not just email)
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
+
 
                 var authToken =
                         new UsernamePasswordAuthenticationToken(

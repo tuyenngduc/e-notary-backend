@@ -20,16 +20,21 @@ public class NotaryRequestResponse {
     private String description;
     private RequestStatus status;
     private String rejectionReason;
+    private String meetingUrl;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private List<String> documentIds; // just ids for now
     private DocumentRequirementResponse documentRequirements;
 
     public static NotaryRequestResponse fromEntity(NotaryRequest r) {
-        return fromEntity(r, null);
+        return fromEntity(r, null, null);
     }
 
     public static NotaryRequestResponse fromEntity(NotaryRequest r, DocumentRequirementResponse documentRequirements) {
+        return fromEntity(r, documentRequirements, null);
+    }
+
+    public static NotaryRequestResponse fromEntity(NotaryRequest r, DocumentRequirementResponse documentRequirements, String meetingUrl) {
         return NotaryRequestResponse.builder()
                 .requestId(r.getRequestId())
                 .clientId(r.getClient() != null ? r.getClient().getUserId() : null)
@@ -39,6 +44,7 @@ public class NotaryRequestResponse {
                 .description(r.getDescription())
                 .status(r.getStatus())
                 .rejectionReason(r.getRejectionReason())
+                .meetingUrl(meetingUrl)
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .documentIds(r.getDocuments() != null ? r.getDocuments().stream().map(d -> d.getDocumentId().toString()).toList() : List.of())

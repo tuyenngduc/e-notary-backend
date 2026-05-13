@@ -13,10 +13,12 @@ import com.actvn.enotary.enums.ContractType;
 import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.DocType;
+import com.actvn.enotary.enums.VerificationStatus;
 import com.actvn.enotary.exception.AppException;
-import com.actvn.enotary.exception.ErrorCodes;
+import com.actvn.enotary.exception.ErrorCode;
 import com.actvn.enotary.security.CustomUserDetails;
 import com.actvn.enotary.service.NotaryRequestService;
+import com.actvn.enotary.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +53,7 @@ class NotaryRequestControllerTest {
 
     private MockMvc mockMvc;
     private NotaryRequestService notaryRequestService;
+    private UserService userService;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule());
 
@@ -65,7 +68,8 @@ class NotaryRequestControllerTest {
     @BeforeEach
     void setUp() {
         notaryRequestService = Mockito.mock(NotaryRequestService.class);
-        NotaryRequestController controller = new NotaryRequestController(notaryRequestService);
+        userService = Mockito.mock(UserService.class);
+        NotaryRequestController controller = new NotaryRequestController(notaryRequestService, userService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new com.actvn.enotary.exception.GlobalExceptionHandler())
                 .build();
@@ -82,9 +86,14 @@ class NotaryRequestControllerTest {
         notaryUser.setUserId(UUID.randomUUID());
         notaryUser.setEmail("notary@example.com");
         notaryUser.setRole(com.actvn.enotary.enums.Role.NOTARY);
+        notaryUser.setVerificationStatus(VerificationStatus.VERIFIED);
 
         notaryDetails = new CustomUserDetails(notaryUser);
         notaryAuth = new UsernamePasswordAuthenticationToken(notaryDetails, null, notaryDetails.getAuthorities());
+
+        // Notary verification is enforced by controller for accept/reject/schedule.
+        // Use lenient() to avoid "unnecessary stubbing" errors in tests that don't hit those paths.
+        Mockito.lenient().when(userService.getById(eq(notaryUser.getUserId()))).thenReturn(notaryUser);
     }
 
     @Test
@@ -121,11 +130,11 @@ class NotaryRequestControllerTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andExpect(header().exists("Location"))
-                .andExpect(jsonPath("$.requestId").value(created.getRequestId().toString()))
-                .andExpect(jsonPath("$.clientId").value(clientUser.getUserId().toString()))
-                .andExpect(jsonPath("$.serviceType").value("ONLINE"))
-                .andExpect(jsonPath("$.contractType").value("TRANSFER_OF_PROPERTY"))
-                .andExpect(jsonPath("$.documentRequirements.requiredDocTypes[0]").value("ID_CARD"));
+                .andExpect(jsonPath("$.data.requestId").value(created.getRequestId().toString()))
+                .andExpect(jsonPath("$.data.clientId").value(clientUser.getUserId().toString()))
+                .andExpect(jsonPath("$.data.serviceType").value("ONLINE"))
+                .andExpect(jsonPath("$.data.contractType").value("TRANSFER_OF_PROPERTY"))
+                .andExpect(jsonPath("$.data.documentRequirements.requiredDocTypes[0]").value("ID_CARD"));
     }
 
     @Test
@@ -154,9 +163,9 @@ class NotaryRequestControllerTest {
         mockMvc.perform(get("/api/requests/" + rid)
                         .principal(clientAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.clientId").value(clientUser.getUserId().toString()))
-                .andExpect(jsonPath("$.documentRequirements.missingDocTypes[0]").value("DRAFT_CONTRACT"));
+                .andExpect(jsonPath("$.data.requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data.clientId").value(clientUser.getUserId().toString()))
+                .andExpect(jsonPath("$.data.documentRequirements.missingDocTypes[0]").value("DRAFT_CONTRACT"));
     }
 
     @Test
@@ -194,8 +203,8 @@ class NotaryRequestControllerTest {
 
         mockMvc.perform(get("/api/requests/me").principal(clientAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].requestId").value(rid.toString()))
-                .andExpect(jsonPath("$[0].clientId").value(clientUser.getUserId().toString()));
+                .andExpect(jsonPath("$.data[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data[0].clientId").value(clientUser.getUserId().toString()));
     }
 
     @Test
@@ -237,9 +246,9 @@ class NotaryRequestControllerTest {
         mockMvc.perform(get("/api/requests/" + rid + "/document-requirements")
                         .principal(clientAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.requiredDocTypes[0]").value("ID_CARD"))
-                .andExpect(jsonPath("$.missingDocTypes[0]").value("DRAFT_CONTRACT"))
-                .andExpect(jsonPath("$.readyForAccept").value(false));
+                .andExpect(jsonPath("$.data.requiredDocTypes[0]").value("ID_CARD"))
+                .andExpect(jsonPath("$.data.missingDocTypes[0]").value("DRAFT_CONTRACT"))
+                .andExpect(jsonPath("$.data.readyForAccept").value(false));
     }
 
     @Test
@@ -276,7 +285,7 @@ class NotaryRequestControllerTest {
 
         mockMvc.perform(post("/api/requests/" + rid + "/cancel").principal(clientAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
     }
 
     @Test
@@ -321,8 +330,8 @@ class NotaryRequestControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("REJECTED"))
-                .andExpect(jsonPath("$.rejectionReason").value("Thiếu giấy tờ bản gốc"));
+                .andExpect(jsonPath("$.data.status").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("Thiếu giấy tờ bản gốc"));
     }
 
     @Test
@@ -346,15 +355,15 @@ class NotaryRequestControllerTest {
                         updated.setRequestId(rid);
                         updated.setClient(clientUser);
                         updated.setNotary(notaryUser);
-                        updated.setStatus(RequestStatus.PROCESSING);
+                        updated.setStatus(RequestStatus.ACCEPTED);
 
                         when(notaryRequestService.acceptRequest(eq(rid), eq(notaryUser.getEmail()))).thenReturn(updated);
 
                         mockMvc.perform(post("/api/requests/" + rid + "/accept")
                                         .principal(notaryAuth))
                                 .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.status").value("PROCESSING"))
-                                .andExpect(jsonPath("$.notaryId").value(notaryUser.getUserId().toString()));
+                                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
+                                .andExpect(jsonPath("$.data.notaryId").value(notaryUser.getUserId().toString()));
                     }
 
                     @Test
@@ -372,16 +381,14 @@ class NotaryRequestControllerTest {
 
                                         when(notaryRequestService.acceptRequest(eq(rid), eq(notaryUser.getEmail())))
                                                 .thenThrow(new AppException(
-                                                        "Hồ sơ chưa đủ để tiếp nhận. Thiếu: DRAFT_CONTRACT",
-                                                        org.springframework.http.HttpStatus.BAD_REQUEST,
-                                                        ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS,
+                                                        ErrorCode.REQUEST_MISSING_REQUIRED_DOCUMENTS,
                                                         Map.of("missingDocTypes", List.of("DRAFT_CONTRACT"))
                                                 ));
 
                                         mockMvc.perform(post("/api/requests/" + rid + "/accept")
                                                         .principal(notaryAuth))
                                                 .andExpect(status().isBadRequest())
-                                                .andExpect(jsonPath("$.code").value(ErrorCodes.REQUEST_MISSING_REQUIRED_DOCUMENTS))
+                                                .andExpect(jsonPath("$.code").value(ErrorCode.REQUEST_MISSING_REQUIRED_DOCUMENTS.name()))
                                                 .andExpect(jsonPath("$.details.missingDocTypes[0]").value("DRAFT_CONTRACT"));
                                     }
 
@@ -409,8 +416,8 @@ class NotaryRequestControllerTest {
                         .param("size", "10")
                         .principal(notaryAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.content[0].clientId").value(clientUser.getUserId().toString()));
+                .andExpect(jsonPath("$.data.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data.content[0].clientId").value(clientUser.getUserId().toString()));
     }
 
     @Test
@@ -423,23 +430,23 @@ class NotaryRequestControllerTest {
         r.setServiceType(ServiceType.OFFLINE);
         r.setContractType(ContractType.WILL);
         r.setDescription("desc");
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
         r.setCreatedAt(OffsetDateTime.now());
         r.setUpdatedAt(OffsetDateTime.now());
 
         var page = new PageImpl<>(List.of(r), PageRequest.of(0, 10), 1);
 
-        when(notaryRequestService.listForNotaryByStatus(eq(notaryUser.getUserId()), eq(RequestStatus.PROCESSING), any(PageRequest.class)))
+        when(notaryRequestService.listForNotaryByStatus(eq(notaryUser.getUserId()), eq(RequestStatus.ACCEPTED), any(PageRequest.class)))
                 .thenReturn(page);
 
         mockMvc.perform(get("/api/requests/filter")
-                        .param("status", "PROCESSING")
+                        .param("status", "ACCEPTED")
                         .param("page", "0")
                         .param("size", "10")
                         .principal(notaryAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+                .andExpect(jsonPath("$.data.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data.content[0].notaryId").value(notaryUser.getUserId().toString()));
     }
 
     @Test
@@ -466,8 +473,8 @@ class NotaryRequestControllerTest {
                         .param("size", "10")
                         .principal(notaryAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+                .andExpect(jsonPath("$.data.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data.content[0].notaryId").value(notaryUser.getUserId().toString()));
     }
 
     @Test
@@ -480,7 +487,7 @@ class NotaryRequestControllerTest {
         r.setServiceType(ServiceType.OFFLINE);
         r.setContractType(ContractType.WILL);
         r.setDescription("accepted");
-        r.setStatus(RequestStatus.PROCESSING);
+        r.setStatus(RequestStatus.ACCEPTED);
         r.setCreatedAt(OffsetDateTime.now());
         r.setUpdatedAt(OffsetDateTime.now());
 
@@ -494,8 +501,8 @@ class NotaryRequestControllerTest {
                         .param("size", "10")
                         .principal(notaryAuth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].requestId").value(rid.toString()))
-                .andExpect(jsonPath("$.content[0].notaryId").value(notaryUser.getUserId().toString()));
+                .andExpect(jsonPath("$.data.content[0].requestId").value(rid.toString()))
+                .andExpect(jsonPath("$.data.content[0].notaryId").value(notaryUser.getUserId().toString()));
     }
 
     @Test
@@ -535,10 +542,10 @@ class NotaryRequestControllerTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andExpect(header().exists("Location"))
-                .andExpect(jsonPath("$.appointmentId").value(aid.toString()))
-                .andExpect(jsonPath("$.serviceType").value("OFFLINE"))
-                .andExpect(jsonPath("$.physicalAddress").value("Văn phòng công chứng số 2"))
-                .andExpect(jsonPath("$.status").value("PENDING"));
+                .andExpect(jsonPath("$.data.appointmentId").value(aid.toString()))
+                .andExpect(jsonPath("$.data.serviceType").value("OFFLINE"))
+                .andExpect(jsonPath("$.data.physicalAddress").value("Văn phòng công chứng số 2"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
 
     @Test
@@ -569,8 +576,8 @@ class NotaryRequestControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.serviceType").value("ONLINE"))
-                .andExpect(jsonPath("$.meetingUrl").isEmpty());
+                .andExpect(jsonPath("$.data.serviceType").value("ONLINE"))
+                .andExpect(jsonPath("$.data.meetingUrl").isEmpty());
     }
 
     @Test
@@ -594,7 +601,7 @@ class NotaryRequestControllerTest {
 
         when(notaryRequestService.scheduleAppointment(eq(rid), eq(notaryUser.getEmail()), any(ScheduleAppointmentRequest.class)))
                 .thenThrow(new com.actvn.enotary.exception.AppException(
-                        "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái PROCESSING",
+                        "Chỉ có thể lên lịch khi yêu cầu đang ở trạng thái ACCEPTED",
                         org.springframework.http.HttpStatus.BAD_REQUEST));
 
         mockMvc.perform(post("/api/requests/" + rid + "/schedule")
@@ -632,7 +639,8 @@ class NotaryRequestControllerTest {
                 .thenThrow(new AppException(
                         "Yêu cầu đã được công chứng viên khác tiếp nhận",
                         org.springframework.http.HttpStatus.CONFLICT,
-                        ErrorCodes.REQUEST_ALREADY_ASSIGNED
+                        null,
+                        ErrorCode.REQUEST_ALREADY_ASSIGNED.name()
                 ));
 
         mockMvc.perform(post("/api/requests/" + rid + "/schedule")
@@ -640,7 +648,7 @@ class NotaryRequestControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value(ErrorCodes.REQUEST_ALREADY_ASSIGNED));
+                .andExpect(jsonPath("$.code").value(ErrorCode.REQUEST_ALREADY_ASSIGNED.name()));
     }
 
 }

@@ -48,20 +48,17 @@ public class StartupAdminInitializer {
         }
 
         try {
-            // determine a phone number to assign to the admin (must be NOT NULL and unique)
             String phoneToUse = null;
             if (adminPhone != null && !adminPhone.isBlank()) {
                 phoneToUse = adminPhone.trim();
                 if (userRepository.existsByPhoneNumber(phoneToUse)) {
                     log.warn("Configured admin phone {} is already used by another user", phoneToUse);
-                    phoneToUse = null; // fallback to generated
+                    phoneToUse = null;
                 }
             }
 
-            // generate a unique phone number if none provided or if provided one collides
             if (phoneToUse == null) {
                 for (int i = 0; i < 50; i++) {
-                    // generate a phone like 096xxxxxxx (total 10 digits)
                     String gen = String.format("096%07d", Math.abs(rand.nextInt(10_000_000)));
                     if (!userRepository.existsByPhoneNumber(gen)) {
                         phoneToUse = gen;
@@ -104,12 +101,10 @@ public class StartupAdminInitializer {
             } else {
                 User admin = new User();
                 admin.setEmail(adminEmail);
-                // ensure phone is set (DB has NOT NULL constraint)
                 admin.setPhoneNumber(phoneToUse);
                 if (adminPassword != null && !adminPassword.isBlank()) {
                     admin.setPasswordHash(passwordEncoder.encode(adminPassword));
                 } else {
-                    // no password provided — create with empty hash (admin should set password via reset flow)
                     admin.setPasswordHash("");
                 }
                 admin.setRole(Role.ADMIN);
