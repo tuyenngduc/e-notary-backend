@@ -2,14 +2,9 @@ package com.actvn.enotary.dto.response;
 
 import org.springframework.http.HttpStatus;
 
-/**
- * Utility class for creating standardized API responses
- */
+
 public class ApiResponseUtil {
 
-    /**
-     * Create a success response
-     */
     public static <T> ApiResponse<T> success(T data) {
         return ApiResponse.<T>builder()
                 .status(HttpStatus.OK.value())
@@ -18,9 +13,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create a success response with custom message
-     */
     public static <T> ApiResponse<T> success(T data, String message) {
         return ApiResponse.<T>builder()
                 .status(HttpStatus.OK.value())
@@ -29,9 +21,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create a success response with custom status and message
-     */
     public static <T> ApiResponse<T> success(int status, String message, T data) {
         return ApiResponse.<T>builder()
                 .status(status)
@@ -40,9 +29,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create a success response for CREATED (201)
-     */
     public static <T> ApiResponse<T> created(T data) {
         return ApiResponse.<T>builder()
                 .status(HttpStatus.CREATED.value())
@@ -51,9 +37,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create a success response for CREATED (201) with custom message
-     */
     public static <T> ApiResponse<T> created(T data, String message) {
         return ApiResponse.<T>builder()
                 .status(HttpStatus.CREATED.value())
@@ -62,9 +45,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create a success response for NO_CONTENT (204)
-     */
     public static ApiResponse<Void> noContent() {
         return ApiResponse.<Void>builder()
                 .status(HttpStatus.NO_CONTENT.value())
@@ -72,9 +52,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create an error response
-     */
     public static <T> ApiResponse<T> error(int status, String message) {
         return ApiResponse.<T>builder()
                 .status(status)
@@ -82,9 +59,6 @@ public class ApiResponseUtil {
                 .build();
     }
 
-    /**
-     * Create an error response with data
-     */
     public static <T> ApiResponse<T> error(int status, String message, T data) {
         return ApiResponse.<T>builder()
                 .status(status)

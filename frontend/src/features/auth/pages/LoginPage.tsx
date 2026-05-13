@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { toApiErrorMessage } from '../../../lib/apiError';
 import { getDefaultRouteByRole } from '../../../lib/roleRedirect';
+import { API_BASE_URL } from '../../../lib/config';
 import { type LoginFormValues, loginSchema } from '../authSchemas';
 
 export function LoginPage() {
@@ -12,7 +13,34 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [submitError, setSubmitError] = useState('');
+  const [debugDetails, setDebugDetails] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const formatLoginError = (error: unknown) => {
+    const axiosLike = error as {
+      isAxiosError?: boolean;
+      response?: { status?: number; data?: unknown };
+      config?: { url?: string; method?: string; baseURL?: string };
+      message?: string;
+    };
+
+    const baseMessage = toApiErrorMessage(error, 'Đăng nhập thất bại');
+
+    const lines: string[] = [];
+    lines.push(`origin=${window.location.origin}`);
+    lines.push(`API_BASE_URL=${API_BASE_URL || '(same-origin via Vite proxy)'}`);
+    if (axiosLike?.isAxiosError) {
+      lines.push(`axiosStatus=${axiosLike.response?.status ?? '(no response - network/CORS?)'}`);
+      lines.push(`axiosRequest=${axiosLike.config?.method ?? ''} ${axiosLike.config?.baseURL ?? ''}${axiosLike.config?.url ?? ''}`);
+    }
+
+    const friendly =
+      axiosLike?.isAxiosError && !axiosLike.response
+        ? `${baseMessage}. Có thể iPhone bị chặn truy cập API (Firewall/CORS) hoặc sai cấu hình API_BASE_URL.`
+        : baseMessage;
+
+    return { friendly, details: lines.join('\n') };
+  };
 
   const {
     register,
@@ -28,13 +56,16 @@ export function LoginPage() {
 
   const onSubmit = handleSubmit(async (data) => {
     setSubmitError('');
+    setDebugDetails('');
     try {
       const nextSession = await login(data);
       const redirectPath =
         (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
       navigate(redirectPath || getDefaultRouteByRole(nextSession.role));
     } catch (error) {
-      setSubmitError(toApiErrorMessage(error, 'Đăng nhập thất bại'));
+      const formatted = formatLoginError(error);
+      setSubmitError(formatted.friendly);
+      setDebugDetails(formatted.details);
     }
   });
 
@@ -73,7 +104,17 @@ export function LoginPage() {
             {errors.password && <small>{errors.password.message}</small>}
           </label>
 
-          {submitError && <div className="form-error">{submitError}</div>}
+          {submitError ? (
+            <div className="form-error">
+              <div>{submitError}</div>
+              {debugDetails ? (
+                <details style={{ marginTop: '0.75rem' }}>
+                  <summary style={{ cursor: 'pointer' }}>Chi tiết kỹ thuật</summary>
+                  <pre style={{ marginTop: '0.75rem', whiteSpace: 'pre-wrap' }}>{debugDetails}</pre>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
 
           <button type="submit" className="primary-btn w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Đang xử lý...' : 'Đăng nhập'}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import {
   downloadDocumentApi,
@@ -10,6 +10,7 @@ import {
   cancelRequestApi,
 } from '../../features/requests/requestApi';
 import { toApiErrorMessage } from '../../lib/apiError';
+import { getVideoRoomPathFromMeetingUrl } from '../../lib/videoRoom';
 import type { DocType, DocumentItem, NotaryRequest } from '../../types/request';
 
 const statusMeta: Record<string, { label: string; tone: string }> = {
@@ -94,6 +95,11 @@ export function CustomerRequestDetailPage() {
     if (!request) return null;
     return statusMeta[request.status] ?? { label: request.status, tone: 'badge-gray' };
   }, [request]);
+
+  const videoRoomPath = useMemo(
+    () => getVideoRoomPathFromMeetingUrl(request?.meetingUrl),
+    [request?.meetingUrl],
+  );
 
   const handleDownload = async (item: DocumentItem) => {
     try {
@@ -226,11 +232,11 @@ export function CustomerRequestDetailPage() {
                     <div className="inline-warning" style={{ marginTop: '1rem' }}>Lý do từ chối: {request.rejectionReason}</div>
                   ) : null}
 
-                  {request.meetingUrl ? (
+                  {videoRoomPath ? (
                     <div style={{ marginTop: '1rem' }}>
-                      <a className="primary-btn inline-btn" href={request.meetingUrl} target="_blank" rel="noreferrer">
+                      <Link className="primary-btn inline-btn" to={videoRoomPath}>
                         Tham gia phòng họp trực tuyến
-                      </a>
+                      </Link>
                     </div>
                   ) : null}
                 </section>
@@ -315,7 +321,6 @@ export function CustomerRequestDetailPage() {
                     {/* Render extra docs that might have been uploaded but are not strictly required */}
                     {documents.filter(d => !request.documentRequirements?.requiredDocTypes.includes(d.docType)).map(extraDoc => {
                       const docType = extraDoc.docType;
-                      // Just group them by docType, we can cheat a little if they are uploaded multiple times
                       if (documents.findIndex(d => d.docType === docType) !== documents.indexOf(extraDoc)) return null;
 
                       const docsForType = documents.filter(d => d.docType === docType);

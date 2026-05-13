@@ -40,11 +40,9 @@ public class UserService {
 
     @Transactional
     public User registerClient(SignUpRequest request) {
-        // Normalize email and phone to avoid duplicates caused by formatting/case
         String email = normalizeEmail(request.getEmail());
         String phone = normalizePhone(request.getPhoneNumber());
 
-        // Validate normalized phone (must be 0 + 9 digits)
         if (phone == null || !phone.matches("^0\\d{9}$")) {
             throw new AppException("Số điện thoại không hợp lệ", HttpStatus.BAD_REQUEST);
         }
@@ -65,7 +63,6 @@ public class UserService {
         try {
             return userRepository.save(user);
         } catch (DataIntegrityViolationException ex) {
-            // Race condition: another request may have inserted same email/phone concurrently
             throw new AppException("Email hoặc số điện thoại đã tồn tại", HttpStatus.CONFLICT);
         }
     }
@@ -111,12 +108,9 @@ public class UserService {
 
     private String normalizePhone(String phone) {
         if (phone == null) return null;
-        // remove spaces, dashes, parentheses
         String cleaned = phone.replaceAll("[\\s\\-()]+", "");
-        // keep leading + if present
         cleaned = cleaned.replaceAll("[^+0-9]", "");
         if (cleaned.startsWith("+84")) {
-            // +84xxxxxxxxx -> 0xxxxxxxxx
             String rest = cleaned.substring(3);
             return "0" + rest;
         }
@@ -128,7 +122,6 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException("Không tìm thấy người dùng", HttpStatus.NOT_FOUND));
 
-        // check duplicate identity number (unique across profiles)
         if (request.getIdentityNumber() != null && !request.getIdentityNumber().isBlank()) {
             Optional<UserProfile> existing = userProfileRepository.findByIdentityNumber(request.getIdentityNumber());
             if (existing.isPresent() && !existing.get().getUser().getUserId().equals(userId)) {

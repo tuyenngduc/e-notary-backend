@@ -25,8 +25,14 @@ public class VideoSignalingService {
     public synchronized JoinResult join(String roomId, String email, WebSocketSession webSocketSession) {
         RoomState room = rooms.computeIfAbsent(roomId, ignored -> new RoomState());
 
-        if (!room.participants.containsKey(email) && room.participants.size() >= 2) {
+        WebSocketSession existingSession = room.participants.get(email);
+        if (existingSession == null && room.participants.size() >= 2) {
             throw new IllegalStateException("Phòng họp đã đủ 2 người tham gia.");
+        }
+
+        if (existingSession != null && !existingSession.getId().equals(webSocketSession.getId())) {
+            sessionToRoom.remove(existingSession.getId());
+            sessionToEmail.remove(existingSession.getId());
         }
 
         room.participants.put(email, webSocketSession);
@@ -48,6 +54,11 @@ public class VideoSignalingService {
 
         RoomState room = rooms.get(roomId);
         if (room == null) {
+            return null;
+        }
+
+        WebSocketSession currentSession = room.participants.get(email);
+        if (currentSession == null || !currentSession.getId().equals(webSocketSessionId)) {
             return null;
         }
 

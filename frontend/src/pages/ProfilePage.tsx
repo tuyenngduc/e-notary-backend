@@ -48,7 +48,6 @@ export function ProfilePage() {
           issuePlace: data.issuePlace || '',
         });
 
-        // Remove auto-editing, let user decide when to click update.
       } catch (err) {
         setError(toApiErrorMessage(err, 'Không tải được thông tin cá nhân'));
       } finally {

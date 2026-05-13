@@ -25,7 +25,14 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
 
 import static org.springframework.security.config.Customizer.withDefaults;
 
@@ -99,7 +106,36 @@ public class SecurityConfig {
                 .filter(origin -> !origin.isBlank())
                 .toList();
 
-        configuration.setAllowedOrigins(allowedOrigins);
+        if (allowedOrigins.isEmpty()) {
+            allowedOrigins = List.of(
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                    "http://192.168.*:5173",
+                    "http://192.168.*:5173",
+                    "http://192.168.*.*:5173",
+                    "http://10.*:5173",
+                    "http://10.*.*.*:5173",
+                    "http://172.16.*:5173",
+                    "http://172.17.*:5173",
+                    "http://172.18.*:5173",
+                    "http://172.19.*:5173",
+                    "http://172.2*.*:5173",
+                    "http://172.3*.*:5173"
+            );
+        }
+
+        // If config looks like local development (has localhost), also allow LAN IPv4 addresses of this machine.
+        // This fixes phone testing where the origin is http://192.168.x.x:5173.
+        if (allowedOrigins.stream().anyMatch(origin -> origin.contains("localhost") || origin.contains("127.0.0.1"))) {
+            allowedOrigins = withLocalLanOrigins(allowedOrigins, 5173);
+        }
+
+        boolean hasWildcard = allowedOrigins.stream().anyMatch(origin -> origin.contains("*"));
+        if (hasWildcard) {
+            configuration.setAllowedOriginPatterns(allowedOrigins);
+        } else {
+            configuration.setAllowedOrigins(allowedOrigins);
+        }
         configuration.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
         ));
@@ -116,6 +152,31 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private List<String> withLocalLanOrigins(List<String> base, int port) {
+        Set<String> merged = new LinkedHashSet<>(base);
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                if (!networkInterface.isUp() || networkInterface.isLoopback() || networkInterface.isVirtual()) {
+                    continue;
+                }
+
+                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (address instanceof Inet4Address inet4) {
+                        String ip = inet4.getHostAddress();
+                        merged.add("http://" + ip + ":" + port);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Best-effort only.
+        }
+        return new ArrayList<>(merged);
     }
 
     private void writeSecurityError(

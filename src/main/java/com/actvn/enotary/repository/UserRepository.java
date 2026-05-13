@@ -15,6 +15,6 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     boolean existsByPhoneNumber(String phoneNumber);
     boolean existsByEmail(String email);
 
-    // count users by role
+
     long countByRole(Role role);
 }

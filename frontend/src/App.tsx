@@ -15,6 +15,7 @@ import { NotaryRequestDetailPage } from './pages/notary/NotaryRequestDetailPage'
 import { NotaryRequestsPage } from './pages/notary/NotaryRequestsPage';
 import { NotaryAppointmentsPage } from './pages/notary/NotaryAppointmentsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { VideoRoomPage } from './pages/video/VideoRoomPage';
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, session } = useAuth();
@@ -135,6 +136,15 @@ export function App() {
         element={
           <ProtectedRoute allowedRoles={['CLIENT', 'NOTARY', 'ADMIN']}>
             <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/video/room/:roomId"
+        element={
+          <ProtectedRoute allowedRoles={['CLIENT', 'NOTARY', 'ADMIN']}>
+            <VideoRoomPage />
           </ProtectedRoute>
         }
       />

@@ -23,9 +23,9 @@ public class Signature {
     private User user;
 
     @Column(columnDefinition = "TEXT")
-    private String signatureValue; // Giá trị mã hóa của chữ ký
+    private String signatureValue;
 
-    private String certSerial; // Serial của chứng thư số (CA)
+    private String certSerial;
     private OffsetDateTime signedAt = OffsetDateTime.now();
     private Boolean isValid = true;
 }

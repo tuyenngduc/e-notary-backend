@@ -4,6 +4,7 @@ import { DashboardLayout } from '../../components/DashboardLayout';
 import { listMyAppointmentsApi } from '../../features/requests/requestApi';
 import { toApiErrorMessage } from '../../lib/apiError';
 import { toContractTypeLabel, toServiceTypeLabel } from '../../lib/enumLabels';
+import { getVideoRoomPathFromMeetingUrl } from '../../lib/videoRoom';
 import type { Appointment } from '../../types/request';
 
 function formatDateObj(value: string) {
@@ -67,6 +68,7 @@ export function NotaryAppointmentsPage() {
             {appointments.map((appt) => {
               const { date, time } = formatDateObj(appt.scheduledTime);
               const isOnline = appt.serviceType === 'ONLINE';
+              const videoRoomPath = getVideoRoomPathFromMeetingUrl(appt.meetingUrl);
 
               return (
                 <div className="list-row" key={appt.appointmentId} style={{ alignItems: 'flex-start' }}>
@@ -99,10 +101,15 @@ export function NotaryAppointmentsPage() {
                   </div>
 
                   <div className="doc-actions" style={{ flexDirection: 'column', gap: '0.75rem', minWidth: '160px' }}>
-                    {isOnline && appt.meetingUrl ? (
-                      <a href={appt.meetingUrl} target="_blank" rel="noreferrer" className="primary-btn" style={{ justifyContent: 'center' }}>
+                    {isOnline && videoRoomPath ? (
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        style={{ justifyContent: 'center' }}
+                        onClick={() => navigate(videoRoomPath)}
+                      >
                         Mở phòng họp
-                      </a>
+                      </button>
                     ) : null}
 
                     <button

@@ -103,7 +103,6 @@ public class NotaryRequestService {
             throw alreadyAssignedException();
         }
 
-        // Idempotent: same notary can call accept again after request already moved to ACCEPTED.
         if (request.getStatus() == RequestStatus.ACCEPTED
                 && request.getNotary() != null
                 && request.getNotary().getUserId().equals(notary.getUserId())) {
@@ -180,7 +179,6 @@ public class NotaryRequestService {
                 .orElse(null);
     }
 
-    // When status is null return requests waiting for acceptance (PROCESSING, unassigned).
     public Page<NotaryRequest> listForNotaryByStatus(UUID notaryUserId, RequestStatus status, Pageable pageable) {
         if (status == null) {
             return notaryRequestRepository.findByStatusAndNotaryIsNull(RequestStatus.PROCESSING, pageable);

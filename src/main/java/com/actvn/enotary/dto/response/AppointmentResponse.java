@@ -20,16 +20,13 @@ public class AppointmentResponse {
     private ContractType contractType;
     private OffsetDateTime scheduledTime;
 
-    /** null nếu OFFLINE hoặc chưa tạo phòng họp */
     private String meetingUrl;
 
-    /** null nếu ONLINE */
     private String physicalAddress;
 
     private AppointmentStatus status;
     private OffsetDateTime createdAt;
 
-    // UI helper fields
     private String clientName;
 
     public static AppointmentResponse fromEntity(Appointment a) {

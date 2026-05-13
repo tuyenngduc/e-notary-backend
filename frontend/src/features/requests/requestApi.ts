@@ -7,6 +7,7 @@ import type {
   PagedData,
   RequestStatus,
 } from '../../types/request';
+import type { VideoSessionResponse } from '../../types/video';
 
 interface ApiEnvelope<T> {
   status: number;
@@ -105,5 +106,26 @@ export async function downloadDocumentApi(documentId: string): Promise<Blob> {
 
 export async function listMyAppointmentsApi(): Promise<import('../../types/request').Appointment[]> {
   const response = await api.get<ApiEnvelope<import('../../types/request').Appointment[]>>('/api/appointments/me');
+  return response.data.data;
+}
+
+export async function verifyVideoTokenApi(token: string): Promise<VideoSessionResponse> {
+  const response = await api.get<ApiEnvelope<VideoSessionResponse>>('/api/video/verify-token', {
+    params: { token },
+  });
+  return response.data.data;
+}
+
+export async function joinVideoRoomApi(roomId: string, token: string): Promise<VideoSessionResponse> {
+  const response = await api.post<ApiEnvelope<VideoSessionResponse>>(`/api/video/room/${roomId}/join`, null, {
+    params: { token },
+  });
+  return response.data.data;
+}
+
+export async function endVideoSessionApi(sessionId: string, reason?: string): Promise<VideoSessionResponse> {
+  const response = await api.post<ApiEnvelope<VideoSessionResponse>>(`/api/video/sessions/${sessionId}/end`, null, {
+    params: { reason: reason?.trim() || 'Kết thúc từ giao diện' },
+  });
   return response.data.data;
 }

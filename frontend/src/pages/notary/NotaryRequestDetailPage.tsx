@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import {
   acceptRequestApi,
@@ -10,6 +10,7 @@ import {
   scheduleRequestApi,
 } from '../../features/requests/requestApi';
 import { toApiErrorMessage } from '../../lib/apiError';
+import { getVideoRoomPathFromMeetingUrl } from '../../lib/videoRoom';
 import {
   toContractTypeLabel,
   toDocTypeLabel,
@@ -127,7 +128,10 @@ export function NotaryRequestDetailPage() {
 
   const missingDocTypes = request?.documentRequirements?.missingDocTypes ?? [];
   const canAccept = request?.status === 'PROCESSING' && missingDocTypes.length === 0;
-  const isTerminal = request?.status === 'COMPLETED' || request?.status === 'CANCELLED' || request?.status === 'REJECTED';
+  const videoRoomPath = useMemo(
+    () => getVideoRoomPathFromMeetingUrl(request?.meetingUrl),
+    [request?.meetingUrl],
+  );
 
   const handleDownload = async (item: DocumentItem) => {
     try {
@@ -346,10 +350,10 @@ export function NotaryRequestDetailPage() {
                               : 'Lịch hẹn trực tiếp đã được xác nhận. Vui lòng gặp khách hàng tại văn phòng đúng giờ.'}
                           </span>
                         </div>
-                        {request.serviceType === 'ONLINE' && request.meetingUrl ? (
-                          <a href={request.meetingUrl} target="_blank" rel="noreferrer" className="primary-btn w-full" style={{ justifyContent: 'center' }}>
+                        {request.serviceType === 'ONLINE' && videoRoomPath ? (
+                          <Link to={videoRoomPath} className="primary-btn w-full" style={{ justifyContent: 'center' }}>
                             Mở phòng họp
-                          </a>
+                          </Link>
                         ) : null}
                       </div>
                     ) : (

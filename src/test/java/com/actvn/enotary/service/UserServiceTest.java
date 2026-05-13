@@ -244,7 +244,7 @@ class UserServiceTest {
         assertEquals("notary@example.com", res.getEmail());
         assertEquals("0912345678", res.getPhoneNumber());
         assertEquals(Role.NOTARY, res.getRole());
-        assertEquals(VerificationStatus.VERIFIED, res.getVerificationStatus());
+        assertEquals(VerificationStatus.PENDING, res.getVerificationStatus());
 
         User saved = captor.getValue();
         assertEquals("notary@example.com", saved.getEmail());

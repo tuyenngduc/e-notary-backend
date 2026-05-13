@@ -34,9 +34,6 @@ public class JwtUtil {
         );
     }
 
-    /**
-     * Tạo token từ Authentication (access token) — include jti
-     */
     public String generateToken(Authentication authentication) {
 
         String email = authentication.getName();
@@ -51,9 +48,6 @@ public class JwtUtil {
                 .compact();
     }
 
-    /**
-     * Tạo token với thêm claims (role, userId...) — access token with jti
-     */
     public String generateToken(String email, Map<String, Object> claims) {
         String jti = UUID.randomUUID().toString();
 
@@ -67,9 +61,6 @@ public class JwtUtil {
                 .compact();
     }
 
-    /**
-     * Generate refresh token (longer expiration) with jti
-     */
     public String generateRefreshToken(String email) {
         String jti = UUID.randomUUID().toString();
 
@@ -82,9 +73,6 @@ public class JwtUtil {
                 .compact();
     }
 
-    /**
-     * Generate token with custom expiration (ms) — utility
-     */
     public String generateTokenWithCustomExpiration(String email, Map<String, Object> claims, long ttlMillis) {
         String jti = UUID.randomUUID().toString();
 
@@ -98,30 +86,18 @@ public class JwtUtil {
                 .compact();
     }
 
-    /**
-     * Lấy email từ token
-     */
     public String extractEmail(String token) {
         return getClaims(token).getSubject();
     }
 
-     /**
-     * Lấy role từ token
-     */
     public String extractRole(String token) {
         return getClaims(token).get("role", String.class);
     }
 
-    /**
-     * Extract jti
-     */
     public String extractJti(String token) {
         return getClaims(token).getId();
     }
 
-    /**
-     * Validate token
-     */
     public boolean validateToken(String token) {
         try {
             getClaims(token);
@@ -131,9 +107,6 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * Public accessor to claims (so services can read expiry/jti)
-     */
     public Claims getClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(secretKey)
@@ -142,9 +115,6 @@ public class JwtUtil {
                 .getBody();
     }
 
-    /**
-     * Return claims even if token expired (returns claims from ExpiredJwtException)
-     */
     public Claims getClaimsAllowExpired(String token) {
         try {
             return getClaims(token);
@@ -153,9 +123,6 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * Parse claims chung (deprecated private)
-     */
     private Claims parseClaims(String token) {
         return getClaims(token);
     }

@@ -25,6 +25,6 @@ public class Payment {
     @Enumerated(EnumType.STRING)
     private PaymentStatus paymentStatus = PaymentStatus.PENDING;
 
-    private String transactionReference; // Mã giao dịch từ cổng thanh toán
+    private String transactionReference;
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

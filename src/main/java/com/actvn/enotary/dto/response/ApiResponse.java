@@ -6,10 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Unified API Response wrapper for all endpoints
- * @param <T> The type of data being returned
- */
+
 @Data
 @Builder
 @NoArgsConstructor

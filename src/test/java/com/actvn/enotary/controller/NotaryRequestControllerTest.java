@@ -91,7 +91,8 @@ class NotaryRequestControllerTest {
         notaryDetails = new CustomUserDetails(notaryUser);
         notaryAuth = new UsernamePasswordAuthenticationToken(notaryDetails, null, notaryDetails.getAuthorities());
 
-        // Notary verification is enforced by controller, so tests must return VERIFIED for notary user.
+        // Notary verification is enforced by controller for accept/reject/schedule.
+        // Use lenient() to avoid "unnecessary stubbing" errors in tests that don't hit those paths.
         Mockito.lenient().when(userService.getById(eq(notaryUser.getUserId()))).thenReturn(notaryUser);
     }
 

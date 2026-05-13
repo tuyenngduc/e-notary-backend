@@ -85,24 +85,20 @@ npm run dev
    - Ngày: Hôm nay
    - Giờ: Bây giờ + 2 phút (VD: 14:30)
 8. Xác nhận
-   ✅ Email sẽ được gửi cho cả 2 người chứa link video room
+   ✅ Hệ thống tạo phòng video tự động và hiển thị nút "Mở phòng họp" ngay trên giao diện
 ```
 
 ---
 
-## 📧 Bước 4: Check Email (Tùy Chọn)
-
-**Email Inbox** (Mailtrap hoặc tương tự)
+## 🧭 Bước 4: Mở Phòng Từ Giao Diện
 
 ```
-Sẽ thấy email từ: noreply@enotary.system
+1. Notary vào "Lịch hẹn" hoặc "Chi tiết yêu cầu"
+2. Bấm nút "Mở phòng họp"
+3. Client vào "Chi tiết yêu cầu" của mình
+4. Bấm nút "Tham gia phòng họp trực tuyến"
 
-Subject: Xác nhận lịch hẹn công chứng
-
-Link:
-https://localhost:5173/video/room/room_xxxxx?token=yyyy-zzzz
-
-👉 Sao chép link này cho bước tiếp theo
+👉 Không cần lấy link từ email. Hai bên thao tác trực tiếp trên giao diện portal.
 ```
 
 ---
@@ -112,22 +108,13 @@ https://localhost:5173/video/room/room_xxxxx?token=yyyy-zzzz
 **Chrome 1 - Client**
 
 ```
-1. Mở link email (hoặc dán vào trình duyệt)
-   https://localhost:5173/video/room/room_xxxxx?token=yyyy-zzzz
+1. Tại trang chi tiết yêu cầu, nhấn "Tham gia phòng họp trực tuyến"
 
 2. Trình duyệt yêu cầu quyền:
    ✅ Nhấn "Cho Phép" (Camera & Microphone)
 
-3. Trang tải, sẽ thấy:
-   ├─ Trạng thái: PENDING
-   ├─ Khu vực video call
-   └─ Nút [Bắt Đầu Cuộc Gọi]
-
-4. Nhấn [Bắt Đầu Cuộc Gọi]
-
-5. Chờ:
+3. Chờ:
    ⏳ "Đang khởi tạo cuộc gọi WebRTC..."
-   ⏳ "Kết nối signaling thiết lập thành công."
    ⏳ "Đang chờ đối tác..."
 
    Sẽ thấy: Video của bạn (self-view) hiển thị
@@ -140,14 +127,11 @@ https://localhost:5173/video/room/room_xxxxx?token=yyyy-zzzz
 **Chrome 2 - Notary**
 
 ```
-1. Mở link email:
-   https://localhost:5173/video/room/room_xxxxx?token=yyyy-zzzz
+1. Tại trang lịch hẹn hoặc chi tiết yêu cầu, nhấn "Mở phòng họp"
 
 2. Cấp quyền truy cập camera/microphone
 
-3. Nhấn [Bắt Đầu Cuộc Gọi]
-
-4. Sau ~2-3 giây:
+3. Sau ~2-3 giây:
    ✅ Thấy video của client xuất hiện
    ✅ Cả 2 người thấy video lẫn nhau
    ✅ Có thể nghe tiếng của nhau
@@ -226,8 +210,7 @@ Nếu bạn thấy tất cả điều này, **demo PASS** ✅
 - [ ] Client tạo yêu cầu
 - [ ] Client upload tài liệu → Trạng thái PROCESSING
 - [ ] Notary lên lịch hẹn
-- [ ] Email được gửi chứa link video room
-- [ ] Cả 2 mở link từ email
+- [ ] Cả 2 vào phòng ngay từ giao diện portal
 - [ ] **Video call 1-1 kết nối thành công** (quan trọng nhất!)
 - [ ] Thấy video hai chiều
 - [ ] Nghe tiếng hai chiều
@@ -242,8 +225,7 @@ Nếu bạn thấy tất cả điều này, **demo PASS** ✅
 | **Video không hiển thị** | Kiểm tra camera bật chưa, thử F5 refresh |
 | **Không nghe tiếng** | Kiểm tra mic bật chưa, check volume máy tính |
 | **WebSocket error** | Kiểm tra backend chạy, CORS config đúng |
-| **"Phòng họp không tồn tại"** | Refresh email, mở link mới |
-| **Email không nhận** | Kiểm tra Mailtrap inbox, spam folder |
+| **"Phòng họp không tồn tại"** | Notary lên lịch lại hoặc mở lại từ nút trên giao diện |
 
 ---
 
@@ -256,15 +238,13 @@ CLIENT                          SERVER                        NOTARY
   |---- Upload Tài Liệu -------->|                             |
   |                                |                             |
   |                                |<--- Lên Lịch Hẹn ---------|
-  |<-- Email + Link Room ---------|                             |
-  |                                |---- Email + Link Room ---->|
+   |<-- Trả dữ liệu meetingUrl -----|                             |
+   |                                |---- Trả dữ liệu meetingUrl->|
   |                                |                             |
-  |---- Mở Link Email ---------->|                             |
-  |---- Bắt Đầu Cuộc Gọi ----->|                             |
+   |---- Mở phòng từ UI -------->|                             |
   |---- JOIN (WebSocket) ------->|                             |
   |                                |                             |
-  |                                |<-- Mở Link Email ---------|
-  |                                |<-- Bắt Đầu Cuộc Gọi -----|
+   |                                |<-- Mở phòng từ UI --------|
   |                                |<-- JOIN (WebSocket) ------|
   |                                |                             |
   |<-- JOINED Signal -------------|                             |
