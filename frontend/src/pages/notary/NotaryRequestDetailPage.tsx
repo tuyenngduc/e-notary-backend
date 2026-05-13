@@ -337,7 +337,7 @@ export function NotaryRequestDetailPage() {
                           </p>
                         )}
                       </div>
-                    ) : request.status === 'SCHEDULED' ? (
+                    ) : request.status === 'SCHEDULED' || request.status === 'IN_VIDEO_CALL' ? (
                       <div style={{ textAlign: 'center' }}>
                         <div className="alert-box alert-info" style={{ marginBottom: '1rem', textAlign: 'left' }}>
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -345,14 +345,16 @@ export function NotaryRequestDetailPage() {
                             <polyline points="12 6 12 12 16 14"></polyline>
                           </svg>
                           <span style={{ fontSize: '0.95rem' }}>
-                            {request.serviceType === 'ONLINE'
-                              ? 'Lịch hẹn trực tuyến đã được xác nhận. Vui lòng tham gia đúng giờ.'
-                              : 'Lịch hẹn trực tiếp đã được xác nhận. Vui lòng gặp khách hàng tại văn phòng đúng giờ.'}
+                            {request.status === 'IN_VIDEO_CALL'
+                              ? 'Phiên xác thực danh tính qua video đang diễn ra.'
+                              : request.serviceType === 'ONLINE'
+                                ? 'Lịch hẹn trực tuyến đã được xác nhận. Vui lòng tham gia đúng giờ.'
+                                : 'Lịch hẹn trực tiếp đã được xác nhận. Vui lòng gặp khách hàng tại văn phòng đúng giờ.'}
                           </span>
                         </div>
                         {request.serviceType === 'ONLINE' && videoRoomPath ? (
                           <Link to={videoRoomPath} className="primary-btn w-full" style={{ justifyContent: 'center' }}>
-                            Mở phòng họp
+                            {request.status === 'IN_VIDEO_CALL' ? 'Quay lại phòng họp' : 'Mở phòng họp'}
                           </Link>
                         ) : null}
                       </div>

@@ -616,6 +616,7 @@ a {
 .badge-yellow { background: #fffbeb; color: #d97706; }
 .badge-green { background: #f0fdf4; color: #16a34a; }
 .badge-red { background: #fef2f2; color: #dc2626; }
+.badge-orange { background: #fff7ed; color: #c2410c; }
 
 .content-grid {
   display: grid;

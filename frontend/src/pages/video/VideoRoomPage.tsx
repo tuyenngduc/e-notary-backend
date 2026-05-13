@@ -185,10 +185,13 @@ export function VideoRoomPage() {
       peerConnection.close();
     }
 
+    // Stop all media tracks to release camera and microphone
     const localStream = localStreamRef.current;
     localStreamRef.current = null;
     if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+      });
     }
 
     if (localVideoRef.current) {
@@ -204,6 +207,8 @@ export function VideoRoomPage() {
   };
 
   useEffect(() => {
+    disposedRef.current = false;
+
     if (!roomId || !token || !authSession?.token || !authSession.email) {
       setError('Thiếu thông tin truy cập phòng họp. Vui lòng vào phòng từ giao diện lịch hẹn.');
       setBusy(false);
@@ -221,6 +226,7 @@ export function VideoRoomPage() {
       };
 
       updateStage('INIT');
+      const pendingIceCandidates: RTCIceCandidateInit[] = [];
       try {
         updateStage('VERIFY_TOKEN');
         setStatusText('Đang xác thực phiên họp...');
@@ -254,6 +260,14 @@ export function VideoRoomPage() {
           video: true,
           audio: true,
         });
+
+        // If the component was unmounted while we were awaiting getUserMedia,
+        // stop all tracks immediately so the camera/mic indicator turns off.
+        if (disposedRef.current) {
+          localStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
         localStreamRef.current = localStream;
         setCameraOn(streamHasVideo(localStream));
         setMicOn(streamHasAudio(localStream));
@@ -262,33 +276,46 @@ export function VideoRoomPage() {
           localVideoRef.current.srcObject = localStream;
         }
 
-        const peerConnection = new RTCPeerConnection(ICE_SERVERS);
-        peerConnectionRef.current = peerConnection;
-
-        localStream.getTracks().forEach((track) => {
-          peerConnection.addTrack(track, localStream);
-        });
-
-        peerConnection.ontrack = (event) => {
-          const [remoteStream] = event.streams;
-          if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
-            setPeerConnected(true);
-            setStatusText('Đã kết nối với đối tác.');
-          }
-        };
-
-        peerConnection.onicecandidate = (event) => {
-          if (!event.candidate) {
-            return;
+        const createPeerConnection = (): RTCPeerConnection => {
+          const oldPc = peerConnectionRef.current;
+          if (oldPc) {
+            oldPc.ontrack = null;
+            oldPc.onicecandidate = null;
+            oldPc.close();
           }
 
-          sendSignal({
-            type: 'ICE',
-            roomId,
-            payload: event.candidate.toJSON(),
+          const pc = new RTCPeerConnection(ICE_SERVERS);
+          peerConnectionRef.current = pc;
+
+          localStream.getTracks().forEach((track) => {
+            pc.addTrack(track, localStream);
           });
+
+          pc.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            if (remoteVideoRef.current && remoteStream) {
+              remoteVideoRef.current.srcObject = remoteStream;
+              setPeerConnected(true);
+              setStatusText('Đã kết nối với đối tác.');
+            }
+          };
+
+          pc.onicecandidate = (event) => {
+            if (!event.candidate) {
+              return;
+            }
+
+            sendSignal({
+              type: 'ICE',
+              roomId,
+              payload: event.candidate.toJSON(),
+            });
+          };
+
+          return pc;
         };
+
+        createPeerConnection();
 
         updateStage('CONNECT_SIGNALING');
         setStatusText('Đang kết nối signaling...');
@@ -321,65 +348,96 @@ export function VideoRoomPage() {
             return;
           }
 
+          // ── PEER_LEFT ─────────────────────────────────────────────────────
           if (message.type === 'PEER_LEFT') {
             setPeerConnected(false);
             hasCreatedOfferRef.current = false;
+            pendingIceCandidates.length = 0;
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = null;
             }
-            setStatusText('Đối tác đã rời phòng.');
+            const oldPc = peerConnectionRef.current;
+            if (oldPc) {
+              oldPc.ontrack = null;
+              oldPc.onicecandidate = null;
+              oldPc.close();
+              peerConnectionRef.current = null;
+            }
+            setStatusText('Đối tác đã rời phòng. Đang chờ kết nối lại...');
             return;
           }
 
-          if (!peerConnectionRef.current) {
-            return;
-          }
-
+          // ── READY: cả 2 đã vào phòng, bắt đầu negotiate ──────────────────
           if (message.type === 'READY') {
             const offererEmail = (message.payload as { offererEmail?: string } | undefined)?.offererEmail;
-            const shouldCreateOffer =
-              !!offererEmail &&
-              offererEmail.toLowerCase() === authSession.email.toLowerCase() &&
-              !hasCreatedOfferRef.current;
+            const iAmOfferer = !!offererEmail && offererEmail.toLowerCase() === authSession.email.toLowerCase();
 
-            if (shouldCreateOffer) {
+            hasCreatedOfferRef.current = false;
+            pendingIceCandidates.length = 0;
+            const freshPc = createPeerConnection();
+
+            if (iAmOfferer) {
               hasCreatedOfferRef.current = true;
-              const offer = await peerConnectionRef.current.createOffer();
-              await peerConnectionRef.current.setLocalDescription(offer);
-              sendSignal({
-                type: 'OFFER',
-                roomId,
-                payload: offer,
-              });
+              const offer = await freshPc.createOffer();
+              await freshPc.setLocalDescription(offer);
+              sendSignal({ type: 'OFFER', roomId, payload: offer });
               setStatusText('Đang gửi đề nghị kết nối...');
+            } else {
+              setStatusText('Đang chờ đề nghị kết nối từ đối tác...');
             }
             return;
           }
 
+          // Các message còn lại yêu cầu PC đang hoạt động
+          const activePc = peerConnectionRef.current;
+          if (!activePc) {
+            return;
+          }
+
+          // ── OFFER: chúng ta là answerer, dùng PC được tạo ở READY ─────────
           if (message.type === 'OFFER') {
             const offer = message.payload as RTCSessionDescriptionInit;
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await peerConnectionRef.current.createAnswer();
-            await peerConnectionRef.current.setLocalDescription(answer);
-            sendSignal({
-              type: 'ANSWER',
-              roomId,
-              payload: answer,
-            });
+            await activePc.setRemoteDescription(new RTCSessionDescription(offer));
+
+            // Flush ICE candidates đã buffer trước khi nhận OFFER
+            for (const buffered of pendingIceCandidates) {
+              await activePc.addIceCandidate(new RTCIceCandidate(buffered));
+            }
+            pendingIceCandidates.length = 0;
+
+            const answer = await activePc.createAnswer();
+            await activePc.setLocalDescription(answer);
+            sendSignal({ type: 'ANSWER', roomId, payload: answer });
             setStatusText('Đang hoàn tất bắt tay WebRTC...');
             return;
           }
 
+          // ── ANSWER: chúng ta là offerer, apply answer ─────────────────────
           if (message.type === 'ANSWER') {
+            if (activePc.signalingState !== 'have-local-offer') {
+              return;
+            }
             const answer = message.payload as RTCSessionDescriptionInit;
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+            await activePc.setRemoteDescription(new RTCSessionDescription(answer));
+
+            // Flush ICE candidates đã buffer trước khi nhận ANSWER
+            for (const buffered of pendingIceCandidates) {
+              await activePc.addIceCandidate(new RTCIceCandidate(buffered));
+            }
+            pendingIceCandidates.length = 0;
             return;
           }
 
+          // ── ICE: buffer cho đến khi remote description được set ───────────
           if (message.type === 'ICE') {
             const iceCandidate = parseIceCandidatePayload(message.payload);
-            if (iceCandidate) {
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(iceCandidate));
+            if (!iceCandidate) {
+              return;
+            }
+            if (activePc.remoteDescription) {
+              await activePc.addIceCandidate(new RTCIceCandidate(iceCandidate));
+            } else {
+              pendingIceCandidates.push(iceCandidate);
             }
           }
         };
@@ -409,7 +467,14 @@ export function VideoRoomPage() {
 
     return () => {
       disposedRef.current = true;
-      closeConnections(true);
+      // Stop all media tracks on unmount to release camera/microphone
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+      // Don't send LEAVE here — server detects disconnect via afterConnectionClosed.
+      // Sending LEAVE in cleanup causes race conditions in React StrictMode (JOIN→LEAVE→JOIN).
+      closeConnections(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, token]);
@@ -453,6 +518,12 @@ export function VideoRoomPage() {
   };
 
   const handleLeaveRoom = () => {
+    // Explicitly stop all tracks before navigating to ensure camera/mic indicator turns off
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    disposedRef.current = true;
     closeConnections(true);
     navigate(getDefaultRouteByRole(authSession?.role), { replace: true });
   };
@@ -468,6 +539,12 @@ export function VideoRoomPage() {
     try {
       await endVideoSessionApi(sessionInfo.sessionId, 'Kết thúc từ giao diện công chứng viên');
       sendSignal({ type: 'END', roomId, message: 'Phiên họp đã được kết thúc.' });
+      // Stop all tracks before navigating
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+      disposedRef.current = true;
       closeConnections(true);
       navigate('/notary/appointments', { replace: true });
     } catch (endError) {

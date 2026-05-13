@@ -342,7 +342,8 @@ public class NotaryRequestService {
     private void validateRequestIsNotTerminal(NotaryRequest request) {
         if (request.getStatus() == RequestStatus.REJECTED
                 || request.getStatus() == RequestStatus.CANCELLED
-                || request.getStatus() == RequestStatus.COMPLETED) {
+                || request.getStatus() == RequestStatus.COMPLETED
+                || request.getStatus() == RequestStatus.IN_VIDEO_CALL) {
             throw new AppException(
                     ErrorCode.REQUEST_TERMINAL_STATUS,
                     Map.of("status", request.getStatus().name())
@@ -396,6 +397,10 @@ public class NotaryRequestService {
 
         if (request.getStatus() == RequestStatus.COMPLETED) {
             throw new AppException("Không thể hủy yêu cầu đã hoàn thành", HttpStatus.BAD_REQUEST);
+        }
+
+        if (request.getStatus() == RequestStatus.IN_VIDEO_CALL) {
+            throw new AppException("Không thể hủy yêu cầu đang trong phiên xác thực danh tính", HttpStatus.BAD_REQUEST);
         }
 
         request.setStatus(RequestStatus.CANCELLED);

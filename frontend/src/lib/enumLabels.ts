@@ -28,6 +28,7 @@ export const requestStatusLabels: Record<string, { label: string; tone: string }
   PROCESSING: { label: 'Chờ tiếp nhận', tone: 'badge-yellow' },
   ACCEPTED: { label: 'Đã tiếp nhận', tone: 'badge-indigo' },
   SCHEDULED: { label: 'Đã lên lịch', tone: 'badge-purple' },
+  IN_VIDEO_CALL: { label: 'Đang xác thực danh tính (Video)', tone: 'badge-orange' },
   AWAITING_PAYMENT: { label: 'Chờ thanh toán', tone: 'badge-yellow' },
   COMPLETED: { label: 'Hoàn thành', tone: 'badge-green' },
   CANCELLED: { label: 'Đã hủy', tone: 'badge-gray' },

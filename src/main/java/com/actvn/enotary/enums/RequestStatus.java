@@ -5,6 +5,7 @@ public enum RequestStatus {
     PROCESSING,
     ACCEPTED,
     SCHEDULED,
+    IN_VIDEO_CALL,
     AWAITING_PAYMENT,
     COMPLETED,
     CANCELLED,

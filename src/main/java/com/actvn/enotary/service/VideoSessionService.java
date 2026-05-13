@@ -3,11 +3,14 @@ package com.actvn.enotary.service;
 import com.actvn.enotary.dto.request.CreateVideoSessionRequest;
 import com.actvn.enotary.dto.response.VideoSessionResponse;
 import com.actvn.enotary.entity.Appointment;
+import com.actvn.enotary.entity.NotaryRequest;
 import com.actvn.enotary.entity.VideoSession;
+import com.actvn.enotary.enums.RequestStatus;
 import com.actvn.enotary.enums.ServiceType;
 import com.actvn.enotary.enums.VideoSessionStatus;
 import com.actvn.enotary.exception.AppException;
 import com.actvn.enotary.repository.AppointmentRepository;
+import com.actvn.enotary.repository.NotaryRequestRepository;
 import com.actvn.enotary.repository.VideoSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +30,7 @@ public class VideoSessionService {
 
     private final VideoSessionRepository videoSessionRepository;
     private final AppointmentRepository appointmentRepository;
+    private final NotaryRequestRepository notaryRequestRepository;
 
     @Value("${app.meeting.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -115,6 +119,7 @@ public class VideoSessionService {
         if (session.getNotaryJoinedAt() != null && session.getClientJoinedAt() != null) {
             session.setStatus(VideoSessionStatus.IN_PROGRESS);
             log.info("[VideoSession] Both participants joined, session IN_PROGRESS");
+            transitionRequestToInVideoCall(session);
         } else if (session.getStatus() == VideoSessionStatus.PENDING && isNotary) {
             session.setStatus(VideoSessionStatus.NOTARY_JOINED);
             log.info("[VideoSession] First participant (Notary) joined");
@@ -204,6 +209,9 @@ public class VideoSessionService {
 
         VideoSession updated = videoSessionRepository.save(session);
         log.info("[VideoSession] Session {} marked as FINISHED", sessionId);
+
+        transitionRequestAfterVideoCallEnded(session);
+
         return VideoSessionResponse.fromEntity(updated);
     }
 
@@ -219,6 +227,36 @@ public class VideoSessionService {
 
         VideoSession updated = videoSessionRepository.save(session);
         log.info("[VideoSession] Session {} marked as CANCELLED", sessionId);
+        transitionRequestAfterVideoCallEnded(session);
         return VideoSessionResponse.fromEntity(updated);
     }
+
+    private void transitionRequestToInVideoCall(VideoSession session) {
+        try {
+            NotaryRequest request = session.getAppointment().getRequest();
+            if (request != null && request.getStatus() == RequestStatus.SCHEDULED) {
+                request.setStatus(RequestStatus.IN_VIDEO_CALL);
+                request.setUpdatedAt(OffsetDateTime.now());
+                notaryRequestRepository.save(request);
+                log.info("[VideoSession] NotaryRequest {} transitioned to IN_VIDEO_CALL", request.getRequestId());
+            }
+        } catch (Exception ex) {
+            log.warn("[VideoSession] Could not transition request to IN_VIDEO_CALL: {}", ex.getMessage());
+        }
+    }
+
+    private void transitionRequestAfterVideoCallEnded(VideoSession session) {
+        try {
+            NotaryRequest request = session.getAppointment().getRequest();
+            if (request != null && request.getStatus() == RequestStatus.IN_VIDEO_CALL) {
+                request.setStatus(RequestStatus.SCHEDULED);
+                request.setUpdatedAt(OffsetDateTime.now());
+                notaryRequestRepository.save(request);
+                log.info("[VideoSession] NotaryRequest {} transitioned back to SCHEDULED after video call ended", request.getRequestId());
+            }
+        } catch (Exception ex) {
+            log.warn("[VideoSession] Could not transition request after video call ended: {}", ex.getMessage());
+        }
+    }
 }
+

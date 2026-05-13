@@ -226,7 +226,11 @@ public class VideoSignalingWebSocketHandler extends TextWebSocketHandler {
         }
         try {
             String jsonMessage = objectMapper.writeValueAsString(payload);
-            session.sendMessage(new TextMessage(jsonMessage));
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(jsonMessage));
+                }
+            }
             log.debug("[Signaling] Sent {} to session {}", payload.getType(), session.getId());
         } catch (IOException e) {
             log.error("[Signaling] Failed to send message to session {}", session.getId(), e);
