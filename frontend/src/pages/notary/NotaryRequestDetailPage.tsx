@@ -354,7 +354,7 @@ export function NotaryRequestDetailPage() {
                         </div>
                         {request.serviceType === 'ONLINE' && videoRoomPath ? (
                           <Link to={videoRoomPath} className="primary-btn w-full" style={{ justifyContent: 'center' }}>
-                            {request.status === 'IN_VIDEO_CALL' ? 'Quay lại phòng họp' : 'Mở phòng họp'}
+                            {request.status === 'IN_VIDEO_CALL' ? 'Tham gia phiên đối soát' : 'Mở phiên đối soát'}
                           </Link>
                         ) : null}
                       </div>
