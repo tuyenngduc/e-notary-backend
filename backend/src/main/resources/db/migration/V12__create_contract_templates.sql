@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS contract_templates (
+    id UUID PRIMARY KEY,
+    service_type_id UUID NOT NULL REFERENCES notary_service_types(id),
+    name VARCHAR(255) NOT NULL,
+    file_url VARCHAR(1000) NOT NULL,
+    version VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

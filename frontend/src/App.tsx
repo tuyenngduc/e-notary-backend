@@ -6,6 +6,9 @@ import { RegisterPage } from './features/auth/pages/RegisterPage';
 import { getDefaultRouteByRole } from './lib/roleRedirect';
 import { HomePage } from './pages/HomePage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AdminServicesPage } from './pages/admin/AdminServicesPage';
+import { AdminTemplatesPage } from './pages/admin/AdminTemplatesPage';
 import { CustomerDashboardPage } from './pages/customer/CustomerDashboardPage';
 import { CustomerRequestsPage } from './pages/customer/CustomerRequestsPage';
 import { NewRequestPage } from './pages/customer/NewRequestPage';
@@ -127,6 +130,30 @@ export function App() {
         element={
           <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminUsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/services"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminServicesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/templates"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminTemplatesPage />
           </ProtectedRoute>
         }
       />

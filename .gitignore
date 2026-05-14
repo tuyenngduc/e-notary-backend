@@ -1,6 +1,8 @@
 HELP.md
 target/
+backend/target/
 .mvn/wrapper/maven-wrapper.jar
+backend/.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -34,11 +36,13 @@ build/
 
 ### Security and Config ###
 .env
+backend/.env
 .env.local
 .env.properties
 application-local.properties
 application-local.yml
 uploads/
+backend/uploads/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo

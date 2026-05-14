@@ -1,196 +1,133 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '../../components/DashboardLayout';
-import { createNotaryApi, listNotariesApi } from '../../features/admin/adminApi';
+import { getDashboardSummaryApi, getDashboardRevenueApi, getDashboardRequestsChartApi } from '../../features/admin/adminApi';
+import type { DashboardSummary, RevenueData, RequestsChartData } from '../../features/admin/adminApi';
 import { toApiErrorMessage } from '../../lib/apiError';
-import type { UserResponse } from '../../types/auth';
-
-interface NotaryFormState {
-  email: string;
-  phoneNumber: string;
-  password: string;
-  confirmPassword: string;
-}
-
-const initialFormState: NotaryFormState = {
-  email: '',
-  phoneNumber: '',
-  password: '',
-  confirmPassword: '',
-};
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 export function AdminDashboardPage() {
-  const [form, setForm] = useState<NotaryFormState>(initialFormState);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [revenueData, setRevenueData] = useState<RevenueData[]>([]);
+  const [requestsChartData, setRequestsChartData] = useState<RequestsChartData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [submitError, setSubmitError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [notaries, setNotaries] = useState<UserResponse[]>([]);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const loadNotaries = async () => {
-    setIsLoading(true);
-    try {
-      const data = await listNotariesApi();
-      setNotaries(data);
-    } catch (error) {
-      setSubmitError(toApiErrorMessage(error, 'Không tải được danh sách công chứng viên'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [pageError, setPageError] = useState('');
 
   useEffect(() => {
-    void loadNotaries();
+    async function loadData() {
+      try {
+        const [summaryData, revenueDataRes, requestsChartDataRes] = await Promise.all([
+          getDashboardSummaryApi(),
+          getDashboardRevenueApi(),
+          getDashboardRequestsChartApi(),
+        ]);
+        setSummary(summaryData);
+        setRevenueData(revenueDataRes);
+        setRequestsChartData(requestsChartDataRes);
+        setPageError('');
+      } catch (error) {
+        setPageError(toApiErrorMessage(error, 'Không tải được dữ liệu dashboard'));
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    void loadData();
   }, []);
 
-  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSubmitError('');
-    setSuccessMessage('');
-
-    if (form.password !== form.confirmPassword) {
-      setSubmitError('Mật khẩu nhập lại không khớp');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const created = await createNotaryApi({
-        email: form.email,
-        phoneNumber: form.phoneNumber,
-        password: form.password,
-      });
-
-      setSuccessMessage(`Đã tạo tài khoản công chứng viên: ${created.email}`);
-      setForm(initialFormState);
-      await loadNotaries();
-    } catch (error) {
-      setSubmitError(toApiErrorMessage(error, 'Tạo công chứng viên thất bại'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  if (isLoading) {
+    return (
+      <DashboardLayout role="admin">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Đang tải dữ liệu...
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="admin">
-      <div className="page-content">
-        <div className="page-header">
-          <h1>Trang chủ</h1>
-          <p>Quản lý tài khoản công chứng viên do admin tạo.</p>
+      <div className="page-content" style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+        <div style={{ marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Dashboard Thống Kê</h1>
+          <p className="muted-text">Cung cấp cái nhìn tổng quan về tình hình kinh doanh và hiệu suất hệ thống.</p>
         </div>
 
-        <section className="soft-card form-card-spaced">
-          <h2>Tạo tài khoản công chứng viên</h2>
+        {pageError && (
+          <div className="form-error" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#fee2e2', color: '#b91c1c', borderRadius: '8px' }}>
+            {pageError}
+          </div>
+        )}
 
-          <form className="form-stack" onSubmit={onSubmit} noValidate>
-            <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                placeholder="notary@example.com"
-                required
-              />
-            </label>
+        {/* Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
+          <div className="soft-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderLeft: '4px solid #3b82f6' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tổng Số User</span>
+            <span style={{ fontSize: '2rem', fontWeight: 700, color: '#1e293b' }}>{summary?.totalUsers || 0}</span>
+          </div>
+          <div className="soft-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderLeft: '4px solid #8b5cf6' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tổng Số CCV</span>
+            <span style={{ fontSize: '2rem', fontWeight: 700, color: '#1e293b' }}>{summary?.totalNotaries || 0}</span>
+          </div>
+          <div className="soft-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderLeft: '4px solid #f59e0b' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Hồ Sơ Chờ Duyệt</span>
+            <span style={{ fontSize: '2rem', fontWeight: 700, color: '#1e293b' }}>{summary?.pendingRequests || 0}</span>
+          </div>
+          <div className="soft-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderLeft: '4px solid #10b981' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Hồ Sơ Hoàn Thành</span>
+            <span style={{ fontSize: '2rem', fontWeight: 700, color: '#1e293b' }}>{summary?.completedRequests || 0}</span>
+          </div>
+        </div>
 
-            <label className="field">
-              <span>Số điện thoại</span>
-              <input
-                type="tel"
-                value={form.phoneNumber}
-                onChange={(event) => setForm((prev) => ({ ...prev, phoneNumber: event.target.value }))}
-                placeholder="0987xxxxxx"
-                required
-              />
-            </label>
-
-            <div className="two-cols">
-              <label className="field">
-                <span>Mật khẩu</span>
-                <div className="password-wrap">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                    placeholder="Tối thiểu 6 ký tự"
-                    required
+        {/* Charts */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem' }}>
+          
+          {/* Revenue Chart */}
+          <div className="soft-card" style={{ padding: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text-primary)' }}>Doanh Thu Theo Tháng</h2>
+            <div style={{ height: '300px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={revenueData}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} dx={-10} tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
+                  <RechartsTooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                    formatter={(value: unknown) => [`${Number(value).toLocaleString()} VND`, 'Doanh thu']}
                   />
-                  <button
-                    type="button"
-                    className="password-eye"
-                    aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                    onClick={() => setShowPassword((prev) => !prev)}
-                  >
-                    {showPassword ? '🙈' : '👁️'}
-                  </button>
-                </div>
-              </label>
+                  <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-              <label className="field">
-                <span>Nhập lại mật khẩu</span>
-                <div className="password-wrap">
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={form.confirmPassword}
-                    onChange={(event) => setForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
-                    placeholder="Nhập lại mật khẩu"
-                    required
+          {/* Requests Chart */}
+          <div className="soft-card" style={{ padding: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text-primary)' }}>Số Lượng Hồ Sơ Theo Dịch Vụ</h2>
+            <div style={{ height: '300px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={requestsChartData}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  layout="vertical"
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
+                  <YAxis dataKey="serviceType" type="category" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} width={120} />
+                  <RechartsTooltip 
+                    cursor={{ fill: '#f1f5f9' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                    formatter={(value: unknown) => [String(value), 'Số lượng']}
                   />
-                  <button
-                    type="button"
-                    className="password-eye"
-                    aria-label={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                    onClick={() => setShowConfirmPassword((prev) => !prev)}
-                  >
-                    {showConfirmPassword ? '🙈' : '👁️'}
-                  </button>
-                </div>
-              </label>
+                  <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={24} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
+          </div>
 
-            {submitError ? <div className="form-error">{submitError}</div> : null}
-            {successMessage ? <div className="success-box">{successMessage}</div> : null}
-
-            <button type="submit" className="primary-btn" disabled={isSubmitting}>
-              {isSubmitting ? 'Đang tạo...' : 'Tạo công chứng viên'}
-            </button>
-          </form>
-        </section>
-
-        <section className="soft-card list-card">
-          <h2>Danh sách công chứng viên</h2>
-          {isLoading ? <p className="muted-text">Đang tải danh sách...</p> : null}
-          {!isLoading && notaries.length === 0 ? (
-            <p className="muted-text">Chưa có công chứng viên nào.</p>
-          ) : null}
-
-          {!isLoading && notaries.length > 0 ? (
-            <div className="list-stack">
-              {notaries.map((notary) => (
-                <div key={notary.userId ?? notary.email} className="list-row" style={{ alignItems: 'center' }}>
-                  <div>
-                    <h3>{notary.email}</h3>
-                    <p className="muted-text">{notary.phoneNumber || 'Chưa có số điện thoại'}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {notary.verificationStatus === 'VERIFIED' ? (
-                      <span className="status-badge badge-green">Đã xác thực</span>
-                    ) : notary.verificationStatus === 'REJECTED' ? (
-                      <span className="status-badge badge-red">Bị từ chối</span>
-                    ) : (
-                      <span className="status-badge badge-yellow">Chưa xác thực</span>
-                    )}
-                    <span className="status-badge badge-indigo">NOTARY</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
+        </div>
       </div>
     </DashboardLayout>
   );
 }
-

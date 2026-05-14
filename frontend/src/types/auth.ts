@@ -24,6 +24,7 @@ export interface UserResponse {
   role?: UserRole;
   phoneNumber?: string;
   verificationStatus?: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  isActive?: boolean;
 }
 
 export interface RefreshRequest {
